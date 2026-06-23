@@ -6,10 +6,16 @@ export interface Order {
   customerAddress: string
   items: OrderItem[]
   totalAmount: number
-  status: 'pending' | 'approved' | 'rejected' | 'processing' | 'completed' | 'delivered'
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'processing' | 'completed' | 'delivered'
   createdAt: string
   approvedAt?: string
   factoryOrderId?: string
+  // 溯源信息
+  serviceId?: string
+  serviceName?: string
+  distributorId?: string
+  distributorName?: string
+  factoryName?: string
 }
 
 export interface OrderItem {
@@ -34,12 +40,21 @@ export interface Meal {
 
 export interface FactoryOrder {
   id: string
+  factoryId: string
   factoryName: string
   items: OrderItem[]
   totalAmount: number
   status: 'pending' | 'confirmed' | 'completed' | 'delivered'
   createdAt: string
+  // 溯源信息
+  distributorName?: string
+  distributorId?: string
+  serviceName?: string
+  // 关联的老人订单ID列表
+  customerOrderIds?: string[]
 }
+
+import { mockMeals, mockFactories } from './data/meals'
 
 // 饮食标签说明
 export const dietaryTagInfo: Record<string, string> = {
@@ -50,69 +65,51 @@ export const dietaryTagInfo: Record<string, string> = {
   'DF': '无乳制品'
 }
 
-// CCA冬季菜单 Week 4 - 基于实际PDF菜单
-export const mockMeals: Meal[] = [
-  // 周一 (Monday)
-  { id: 'w4-mon-1', name: '瑞典肉丸配温和胡椒肉汁', nameEn: 'Swedish Meatballs with Mild Pepper Gravy', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LS'], weekNumber: 4, dayOfWeek: '周一' },
-  { id: 'w4-mon-2', name: '奶油芥末鸡', nameEn: 'Creamy Mustard Chicken', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周一' },
-  { id: 'w4-mon-3', name: '西班牙烩饭', nameEn: 'Spanish Risotto Slice', price: 24, category: '素食', subCategory: 'Vegetarian', dietaryTags: ['LS'], weekNumber: 4, dayOfWeek: '周一' },
-  { id: 'w4-mon-4', name: '羊肝培根配洋葱肉汁和土豆泥', nameEn: 'Lambs Fry & bacon with Onion gravy & Mashed Potato', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', weekNumber: 4, dayOfWeek: '周一' },
-  { id: 'w4-mon-5', name: '椰香烤蛋奶', nameEn: 'Coconut Baked Custard', price: 12, category: '甜点', subCategory: 'Sweet', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周一' },
-  { id: 'w4-mon-6', name: '双拼水果配蛋奶', nameEn: 'Two Fruits with Custard', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周一' },
+export { mockMeals, mockFactories }
 
-  // 周二 (Tuesday)
-  { id: 'w4-tue-1', name: '烟熏辣椒酱猪排', nameEn: 'Pork Steak with Smoky Peppernata Sauce', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LS'], weekNumber: 4, dayOfWeek: '周二' },
-  { id: 'w4-tue-2', name: '辣味玉米牛肉', nameEn: 'Chilli Corn Carne', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周二' },
-  { id: 'w4-tue-3', name: '蔬菜达尔咖喱', nameEn: 'Vegetable Dahl', price: 24, category: '素食', subCategory: 'Vegetarian', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周二' },
-  { id: 'w4-tue-4', name: '法式鸡肉炖菜', nameEn: 'French Chicken Casserole', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['GF', 'LS'], weekNumber: 4, dayOfWeek: '周二' },
-  { id: 'w4-tue-5', name: '苹果、梨和大黄果脆配蛋奶', nameEn: 'Apple, Pear & Rhubarb Cobbler with Custard', price: 12, category: '甜点', subCategory: 'Sweet', weekNumber: 4, dayOfWeek: '周二' },
-  { id: 'w4-tue-6', name: '水果沙拉配酸奶', nameEn: 'Fruit Salad with Yoghurt', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周二' },
+// ═══ 冬季菜单 (已迁移至 src/data/meals.ts) ═══
 
-  // 周三 (Wednesday)
-  { id: 'w4-wed-1', name: '帕玛森鸡排', nameEn: 'Chicken Parmigiana', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周三' },
-  { id: 'w4-wed-2', name: '猪肉苹果酒炖菜', nameEn: 'Pork & Cider Casserole', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周三' },
-  { id: 'w4-wed-3', name: '土豆菠菜派', nameEn: 'Potato Spinach Pie', price: 24, category: '素食', subCategory: 'Vegetarian', weekNumber: 4, dayOfWeek: '周三' },
-  { id: 'w4-wed-4', name: '咸味牛肉碎配土豆泥', nameEn: 'Savoury Beef Mince with Mash Potato', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['GF', 'LSF'], weekNumber: 4, dayOfWeek: '周三' },
-  { id: 'w4-wed-5', name: '葡萄干布丁配蛋奶', nameEn: 'Sultana Pudding with Custard', price: 12, category: '甜点', subCategory: 'Sweet', weekNumber: 4, dayOfWeek: '周三' },
-  { id: 'w4-wed-6', name: '桃子配蛋奶', nameEn: 'Peaches with Custard', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周三' },
+// ── 账号类型 ──
+export interface CustomerAccount {
+  id: string
+  name: string
+  phone: string
+  address: string
+  notes: string
+  serviceId: string
+  distributorId: string
+  createdAt: string
+}
 
-  // 周四 (Thursday)
-  { id: 'w4-thu-1', name: '牧羊人派', nameEn: 'Shepherd\'s Pie', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周四' },
-  { id: 'w4-thu-2', name: '三文鱼焗意面', nameEn: 'Salmon Pasta Bake', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周四' },
-  { id: 'w4-thu-3', name: '蔬菜青酱焗意面', nameEn: 'Vegetable Pesto Pasta Bake', price: 24, category: '素食', subCategory: 'Vegetarian', weekNumber: 4, dayOfWeek: '周四' },
-  { id: 'w4-thu-4', name: '印度黄油鸡配蒸米饭', nameEn: 'Indian Butter Chicken with Steamed Rice', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['GF', 'LS'], weekNumber: 4, dayOfWeek: '周四' },
-  { id: 'w4-thu-5', name: '柑橘、乳清干酪和杏仁蛋糕配蛋奶', nameEn: 'Citrus, Ricotta & Almond Cake with Custard', price: 12, category: '甜点', subCategory: 'Sweet', weekNumber: 4, dayOfWeek: '周四' },
-  { id: 'w4-thu-6', name: '香料苹果配酸奶', nameEn: 'Spiced Apples with Yoghurt', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周四' },
+export interface ServiceAccount {
+  id: string
+  name: string
+  phone: string
+  createdAt: string
+}
 
-  // 周五 (Friday)
-  { id: 'w4-fri-1', name: '裹粉炸鱼', nameEn: 'Crumbed Fish', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周五' },
-  { id: 'w4-fri-2', name: '印度黄油鸡', nameEn: 'Butter Chicken', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周五' },
-  { id: 'w4-fri-3', name: '印度黄油豆腐', nameEn: 'Indian Butter Tofu', price: 24, category: '素食', subCategory: 'Vegetarian', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周五' },
-  { id: 'w4-fri-4', name: '蔬菜千层面配白酱', nameEn: 'Vegetable Lasagna with Bechamel Sauce', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周五' },
-  { id: 'w4-fri-5', name: '奶油米布丁配太妃苹果泥', nameEn: 'Creamy Rice & Toffee Apple Puree', price: 12, category: '甜点', subCategory: 'Sweet', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周五' },
-  { id: 'w4-fri-6', name: '混合水果果酱', nameEn: 'Mixed Fruit Compote', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', weekNumber: 4, dayOfWeek: '周五' },
+export interface DistributorAccount {
+  id: string
+  name: string
+  phone: string
+  region: string
+  createdAt: string
+}
 
-  // 周六 (Saturday)
-  { id: 'w4-sat-1', name: '波特酒酱烤牛肉', nameEn: 'Roast Beef with Port Wine Sauce', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周六' },
-  { id: 'w4-sat-2', name: '蜂蜜胡椒猪肉', nameEn: 'Honey Pepper Pork', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周六' },
-  { id: 'w4-sat-3', name: '焗烤蔬菜', nameEn: 'Veggie Slice', price: 24, category: '素食', subCategory: 'Vegetarian', dietaryTags: ['LS'], weekNumber: 4, dayOfWeek: '周六' },
-  { id: 'w4-sat-4', name: '法式鸡肉炖菜', nameEn: 'French Chicken Casserole', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['GF', 'LS'], weekNumber: 4, dayOfWeek: '周六' },
-  { id: 'w4-sat-5', name: '果冻配双拼水果蛋奶', nameEn: 'Jelly & Two Fruits Custard', price: 12, category: '甜点', subCategory: 'Sweet', weekNumber: 4, dayOfWeek: '周六' },
-  { id: 'w4-sat-6', name: '梨配酸奶', nameEn: 'Pear with Yoghurt', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周六' },
+export interface FactoryAccount {
+  id: string
+  name: string
+  phone: string
+  address: string
+  createdAt: string
+}
 
-  // 周日 (Sunday)
-  { id: 'w4-sun-1', name: '烟熏烧烤酱烤鸡腿', nameEn: 'Roast Chicken Thigh with Smoky BBQ Sauce', price: 28, category: '常规主餐', subCategory: 'Regular Main', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周日' },
-  { id: 'w4-sun-2', name: '慢炖羊肉砂锅', nameEn: 'Slow Cooked Lamb Casserole', price: 26, category: '易咀嚼主餐', subCategory: 'Easy to Chew', dietaryTags: ['LSF'], weekNumber: 4, dayOfWeek: '周日' },
-  { id: 'w4-sun-3', name: '扁豆薄洛尼亚酱', nameEn: 'Lentil Bolognaise', price: 24, category: '素食', subCategory: 'Vegetarian', dietaryTags: ['LSF', 'LS'], weekNumber: 4, dayOfWeek: '周日' },
-  { id: 'w4-sun-4', name: '咸味牛肉碎配土豆泥', nameEn: 'Savoury Beef Mince with Mash Potato', price: 30, category: 'Farmdoor主餐', subCategory: 'Main Meal', dietaryTags: ['GF', 'LSF'], weekNumber: 4, dayOfWeek: '周日' },
-  { id: 'w4-sun-5', name: '倒扣桃子蛋糕配蛋奶', nameEn: 'Peach Upside Down Cake with Custard', price: 12, category: '甜点', subCategory: 'Sweet', weekNumber: 4, dayOfWeek: '周日' },
-  { id: 'w4-sun-6', name: '杏子配蛋奶', nameEn: 'Apricots with Custard', price: 10, category: '甜点', subCategory: 'Fruit + Dairy', dietaryTags: ['DBF'], weekNumber: 4, dayOfWeek: '周日' },
-]
-
-export const mockFactories = [
-  { id: '1', name: 'CCA中央厨房' },
-  { id: '2', name: 'Farmdoor营养餐工厂' },
-]
+export interface CurrentUser {
+  role: 'customer' | 'service' | 'distributor' | 'factory'
+  id: string
+  name: string
+  phone: string
+}
 
 // 按天和类别分组菜单的辅助函数
 export const getMealsByDayAndCategory = (weekNumber: number = 4) => {
@@ -136,17 +133,63 @@ export const getMealsByDayAndCategory = (weekNumber: number = 4) => {
   return result
 }
 
+// 根据客户电话解析关联的服务机构
+export function resolveServiceForCustomer(phone: string): { serviceId: string; serviceName: string } {
+  const custAccounts = storage.getAccounts<CustomerAccount>('customer')
+  const cust = custAccounts.find(c => c.phone === phone)
+  if (!cust?.serviceId) return { serviceId: '', serviceName: '' }
+  const svcAccounts = storage.getAccounts<ServiceAccount>('service')
+  const svc = svcAccounts.find(s => s.id === cust.serviceId)
+  return svc ? { serviceId: svc.id, serviceName: svc.name } : { serviceId: '', serviceName: '' }
+}
+
+// 根据当前日期自动计算菜单周次 (4周轮换, 以2026年6月第1个周一为基准)
+export function getCurrentMenuWeek(): number {
+  const now = new Date()
+  const dayOfWeek = now.getDay()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() - ((dayOfWeek + 6) % 7))
+  const weekZero = new Date(2026, 5, 1) // June 1, 2026 is a Monday
+  const diffWeeks = Math.floor((monday.getTime() - weekZero.getTime()) / (7 * 24 * 60 * 60 * 1000))
+  return ((diffWeeks % 4) + 4) % 4 + 1
+}
+
 // 本地存储键
 const STORAGE_KEY = 'icooker_orders'
 const CUSTOMER_INFO_KEY = 'icooker_customer_info'
+const ACCOUNTS_CUSTOMERS_KEY = 'icooker_accounts_customers'
+const ACCOUNTS_SERVICES_KEY = 'icooker_accounts_services'
+const ACCOUNTS_DISTRIBUTORS_KEY = 'icooker_accounts_distributors'
+const ACCOUNTS_FACTORIES_KEY = 'icooker_accounts_factories'
+const CURRENT_USER_KEY = 'icooker_current_user'
+const FACTORY_ORDERS_KEY = 'icooker_factory_orders'
+const CUSTOM_MEALS_KEY = 'icooker_custom_meals'
+
+function getAccountsKey(role: string): string {
+  switch (role) {
+    case 'customer': return ACCOUNTS_CUSTOMERS_KEY
+    case 'service': return ACCOUNTS_SERVICES_KEY
+    case 'distributor': return ACCOUNTS_DISTRIBUTORS_KEY
+    case 'factory': return ACCOUNTS_FACTORIES_KEY
+    default: throw new Error(`Unknown role: ${role}`)
+  }
+}
 
 // 订单变化监听器
 type OrderChangeListener = () => void
 const orderChangeListeners: OrderChangeListener[] = []
 
+// 工厂订单变化监听器
+type FactoryOrderChangeListener = () => void
+const factoryOrderChangeListeners: FactoryOrderChangeListener[] = []
+
 // 通知所有监听器
 function notifyOrderChange() {
   orderChangeListeners.forEach(listener => listener())
+}
+
+function notifyFactoryOrderChange() {
+  factoryOrderChangeListeners.forEach(listener => listener())
 }
 
 // 客户信息接口
@@ -161,47 +204,255 @@ export const storage = {
     const data = localStorage.getItem(STORAGE_KEY)
     return data ? JSON.parse(data) : []
   },
-  
+
   saveOrder: (order: Order) => {
     const orders = storage.getOrders()
     orders.push(order)
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orders))
-    notifyOrderChange() // 通知监听者
+    notifyOrderChange()
   },
-  
+
   updateOrder: (id: string, updates: Partial<Order>) => {
     const orders = storage.getOrders()
     const index = orders.findIndex(o => o.id === id)
     if (index !== -1) {
       orders[index] = { ...orders[index], ...updates }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders))
-      notifyOrderChange() // 通知监听者
+      notifyOrderChange()
     }
   },
-  
-  // 订阅订单变化
+
   subscribeToOrderChanges: (listener: OrderChangeListener) => {
     orderChangeListeners.push(listener)
     return () => {
       const index = orderChangeListeners.indexOf(listener)
-      if (index > -1) {
-        orderChangeListeners.splice(index, 1)
-      }
+      if (index > -1) orderChangeListeners.splice(index, 1)
     }
   },
-  
-  // 客户信息管理
+
+  // ── 工厂订单管理 ──
+  getFactoryOrders: (): FactoryOrder[] => {
+    const data = localStorage.getItem(FACTORY_ORDERS_KEY)
+    return data ? JSON.parse(data) : []
+  },
+
+  saveFactoryOrder: (order: FactoryOrder) => {
+    const orders = storage.getFactoryOrders()
+    orders.push(order)
+    localStorage.setItem(FACTORY_ORDERS_KEY, JSON.stringify(orders))
+    notifyFactoryOrderChange()
+  },
+
+  updateFactoryOrder: (id: string, updates: Partial<FactoryOrder>) => {
+    const orders = storage.getFactoryOrders()
+    const index = orders.findIndex(o => o.id === id)
+    if (index !== -1) {
+      orders[index] = { ...orders[index], ...updates }
+      localStorage.setItem(FACTORY_ORDERS_KEY, JSON.stringify(orders))
+      notifyFactoryOrderChange()
+    }
+  },
+
+  subscribeToFactoryOrderChanges: (listener: FactoryOrderChangeListener) => {
+    factoryOrderChangeListeners.push(listener)
+    return () => {
+      const index = factoryOrderChangeListeners.indexOf(listener)
+      if (index > -1) factoryOrderChangeListeners.splice(index, 1)
+    }
+  },
+
+  // ── 自定义菜品管理 ──
+  getCustomMeals: (): Meal[] => {
+    const data = localStorage.getItem(CUSTOM_MEALS_KEY)
+    return data ? JSON.parse(data) : []
+  },
+
+  saveCustomMeal: (meal: Meal) => {
+    const meals = storage.getCustomMeals()
+    meals.push(meal)
+    localStorage.setItem(CUSTOM_MEALS_KEY, JSON.stringify(meals))
+  },
+
+  updateCustomMeal: (id: string, updates: Partial<Meal>) => {
+    const meals = storage.getCustomMeals()
+    const idx = meals.findIndex(m => m.id === id)
+    if (idx !== -1) {
+      meals[idx] = { ...meals[idx], ...updates }
+      localStorage.setItem(CUSTOM_MEALS_KEY, JSON.stringify(meals))
+    }
+  },
+
+  deleteCustomMeal: (id: string) => {
+    const meals = storage.getCustomMeals()
+    localStorage.setItem(CUSTOM_MEALS_KEY, JSON.stringify(meals.filter(m => m.id !== id)))
+  },
+
+  // ── 根据客户ID获取关联订单 ──
+  getOrdersByCustomerPhone: (phone: string): Order[] => {
+    return storage.getOrders().filter(o => o.customerPhone === phone)
+  },
+
+  // ── 根据客户ID删除其所有订单 ──
+  deleteOrdersByCustomerPhone: (phone: string) => {
+    const orders = storage.getOrders().filter(o => o.customerPhone !== phone)
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(orders))
+    notifyOrderChange()
+  },
+
+  // ── 清理账户关联引用 ──
+  cleanupAccountRefs: (role: string, id: string) => {
+    if (role === 'service') {
+      const orders = storage.getOrders()
+      let changed = false
+      orders.forEach(o => {
+        if (o.serviceId === id) {
+          o.serviceId = undefined
+          o.serviceName = undefined
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(orders))
+        notifyOrderChange()
+      }
+    } else if (role === 'distributor') {
+      const orders = storage.getOrders()
+      let changed = false
+      orders.forEach(o => {
+        if (o.distributorId === id) {
+          o.distributorId = undefined
+          o.distributorName = undefined
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(orders))
+        notifyOrderChange()
+      }
+    } else if (role === 'factory') {
+      const factoryOrders = storage.getFactoryOrders()
+      let changed = false
+      factoryOrders.forEach(o => {
+        if (o.factoryId === id) {
+          o.factoryId = ''
+          o.factoryName = '已删除的工厂'
+          changed = true
+        }
+      })
+      if (changed) {
+        localStorage.setItem(FACTORY_ORDERS_KEY, JSON.stringify(factoryOrders))
+        notifyFactoryOrderChange()
+      }
+    }
+    // 同时清理客户账户中对该角色的引用
+    if (role === 'service') {
+      const customers = storage.getAccounts<CustomerAccount>('customer')
+      let changed = false
+      customers.forEach(c => {
+        if (c.serviceId === id) { c.serviceId = ''; changed = true }
+      })
+      if (changed) storage.saveAccounts('customer', customers)
+    } else if (role === 'distributor') {
+      const customers = storage.getAccounts<CustomerAccount>('customer')
+      let changed = false
+      customers.forEach(c => {
+        if (c.distributorId === id) { c.distributorId = ''; changed = true }
+      })
+      if (changed) storage.saveAccounts('customer', customers)
+    }
+  },
+
   getCustomerInfo: (): CustomerInfo | null => {
     const data = localStorage.getItem(CUSTOMER_INFO_KEY)
     return data ? JSON.parse(data) : null
   },
-  
+
   saveCustomerInfo: (info: CustomerInfo) => {
     localStorage.setItem(CUSTOMER_INFO_KEY, JSON.stringify(info))
   },
-  
+
+  // ── 账号管理 ──
+  getAccounts: <T>(role: string): T[] => {
+    const data = localStorage.getItem(getAccountsKey(role))
+    return data ? JSON.parse(data) : []
+  },
+
+  saveAccounts: <T>(role: string, accounts: T[]) => {
+    localStorage.setItem(getAccountsKey(role), JSON.stringify(accounts))
+  },
+
+  addAccount: <T extends { id: string }>(role: string, account: T) => {
+    const accounts = storage.getAccounts<T>(role)
+    accounts.push(account)
+    storage.saveAccounts(role, accounts)
+  },
+
+  updateAccount: <T extends { id: string }>(role: string, id: string, updates: Partial<T>) => {
+    const accounts = storage.getAccounts<T>(role)
+    const idx = accounts.findIndex((a: T) => a.id === id)
+    if (idx !== -1) {
+      accounts[idx] = { ...accounts[idx], ...updates }
+      storage.saveAccounts(role, accounts)
+    }
+  },
+
+  deleteAccount: (role: string, id: string) => {
+    const accounts = storage.getAccounts(role)
+    storage.saveAccounts(role, accounts.filter((a: any) => a.id !== id))
+  },
+
+  // ── 当前用户 ──
+  getCurrentUser: (): CurrentUser | null => {
+    const data = localStorage.getItem(CURRENT_USER_KEY)
+    return data ? JSON.parse(data) : null
+  },
+
+  setCurrentUser: (user: CurrentUser) => {
+    localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user))
+  },
+
+  clearCurrentUser: () => {
+    localStorage.removeItem(CURRENT_USER_KEY)
+  },
+
+  // ── 预置账号 ──
+  seedAccounts: () => {
+    const now = new Date().toISOString()
+    if (storage.getAccounts('customer').length === 0) {
+      storage.saveAccounts('customer', [
+        { id: 'cust-1', name: '张伟', phone: '13800001001', address: '北京市海淀区中关村南大街10号', notes: '需要低钠餐', serviceId: 'svc-1', distributorId: 'dist-1', createdAt: now },
+        { id: 'cust-2', name: '李梅', phone: '13800001002', address: '北京市朝阳区建国路88号', notes: '偏好素食', serviceId: 'svc-1', distributorId: 'dist-2', createdAt: now },
+        { id: 'cust-3', name: '王建', phone: '13800001003', address: '北京市西城区金融街15号', notes: '', serviceId: 'svc-1', distributorId: 'dist-1', createdAt: now },
+      ])
+    }
+    if (storage.getAccounts('service').length === 0) {
+      storage.saveAccounts('service', [
+        { id: 'svc-1', name: '朝阳社区服务中心', phone: '010-88880001', createdAt: now },
+      ])
+    }
+    if (storage.getAccounts('distributor').length === 0) {
+      storage.saveAccounts('distributor', [
+        { id: 'dist-1', name: '东城配送中心', phone: '010-88880002', region: '东城区', createdAt: now },
+        { id: 'dist-2', name: '朝阳配送中心', phone: '010-88880005', region: '朝阳区', createdAt: now },
+      ])
+    }
+    if (storage.getAccounts('factory').length === 0) {
+      storage.saveAccounts('factory', [
+        { id: 'fact-1', name: 'CCA中央厨房', phone: '010-88880003', address: '北京市大兴区工业园区A1', createdAt: now },
+        { id: 'fact-2', name: 'Farmdoor营养餐工厂', phone: '010-88880004', address: '北京市通州区食品园区B3', createdAt: now },
+      ])
+    }
+  },
+
   clearAll: () => {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(CUSTOMER_INFO_KEY)
+    localStorage.removeItem(ACCOUNTS_CUSTOMERS_KEY)
+    localStorage.removeItem(ACCOUNTS_SERVICES_KEY)
+    localStorage.removeItem(ACCOUNTS_DISTRIBUTORS_KEY)
+    localStorage.removeItem(ACCOUNTS_FACTORIES_KEY)
+    localStorage.removeItem(CURRENT_USER_KEY)
+    localStorage.removeItem(FACTORY_ORDERS_KEY)
+    localStorage.removeItem(CUSTOM_MEALS_KEY)
   }
 }

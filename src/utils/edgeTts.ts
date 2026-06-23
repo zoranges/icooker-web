@@ -112,7 +112,6 @@ export async function edgeSpeak(options: SpeakOptions): Promise<void> {
 
   return new Promise<void>((resolve, reject) => {
     const audioChunks: ArrayBuffer[] = []
-    let audioContext: string | null = null
     let settled = false
 
     // 尝试连接：先代理，后直连
@@ -198,9 +197,6 @@ export async function edgeSpeak(options: SpeakOptions): Promise<void> {
           const msg = event.data as string
           if (msg.includes('Path:turn.start')) {
             onStart?.()
-            // 提取 audio context
-            const contextMatch = msg.match(/X-RequestId:([a-f0-9]+)/i)
-            if (contextMatch) audioContext = contextMatch[1]
           } else if (msg.includes('Path:turn.end')) {
             // TTS 完成，播放音频
             if (audioChunks.length > 0) {

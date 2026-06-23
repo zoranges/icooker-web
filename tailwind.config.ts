@@ -50,11 +50,32 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Extended editorial palette
+        wheat: {
+          DEFAULT: "hsl(var(--color-wheat))",
+          bg: "hsl(var(--color-wheat-bg))",
+        },
+        terracotta: {
+          DEFAULT: "hsl(var(--color-terracotta))",
+          bg: "hsl(var(--color-terracotta-bg))",
+        },
+        sage: {
+          DEFAULT: "hsl(var(--color-sage))",
+          bg: "hsl(var(--color-sage-bg))",
+        },
+        slateblue: {
+          DEFAULT: "hsl(var(--color-slate-blue))",
+          bg: "hsl(var(--color-slate-blue-bg))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      fontFamily: {
+        display: ["'DM Serif Display'", "Georgia", "'Times New Roman'", "serif"],
+        sans: ["'DM Sans'", "system-ui", "-apple-system", "sans-serif"],
       },
     },
   },

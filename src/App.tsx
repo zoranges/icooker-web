@@ -5,6 +5,8 @@ import ServicePortal from './portals/ServicePortal'
 import DistributorPortal from './portals/DistributorPortal'
 import FactoryPortal from './portals/FactoryPortal'
 
+import AdminPortal from './portals/AdminPortal'
+
 function App() {
   return (
     <BrowserRouter>
@@ -14,6 +16,7 @@ function App() {
         <Route path="/service/*" element={<ServicePortal />} />
         <Route path="/distributor/*" element={<DistributorPortal />} />
         <Route path="/factory/*" element={<FactoryPortal />} />
+        <Route path="/admin/*" element={<AdminPortal />} />
       </Routes>
     </BrowserRouter>
   )

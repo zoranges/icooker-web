@@ -15,6 +15,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      port: 5816,
       proxy: {
         '/api/ocr': {
           target: ocrProxyTarget,

@@ -12,8 +12,6 @@ export function isSpeechSupported(): boolean {
 }
 
 // 当前播放状态
-let usingDashTts = false
-let localUtterance: SpeechSynthesisUtterance | null = null
 
 /**
  * 播报餐品信息
@@ -34,7 +32,6 @@ export function speakMealInfo(
   speakWithDashTts(text, onEnd).catch(() => {
     // DashScope 失败，清理并降级到本地语音
     dashStop()
-    usingDashTts = false
     console.warn('[语音] DashScope TTS 不可用，降级到本地语音')
     speakWithLocalTts(text, onEnd)
   })
@@ -44,8 +41,6 @@ export function speakMealInfo(
  * 使用 DashScope CosyVoice 播报（带超时保护）
  */
 async function speakWithDashTts(text: string, onEnd?: () => void): Promise<void> {
-  usingDashTts = true
-
   // 超时保护：15 秒内未完成则放弃
   const timeoutPromise = new Promise<never>((_, reject) => {
     setTimeout(() => reject(new Error('DashScope TTS 连接超时')), 15000)
@@ -59,12 +54,10 @@ async function speakWithDashTts(text: string, onEnd?: () => void): Promise<void>
         console.log('[语音] DashScope Qwen3-TTS 开始播报')
       },
       onEnd: () => {
-        usingDashTts = false
         onEnd?.()
       },
       onError: (err) => {
         console.warn('[语音] DashScope TTS 错误:', err.message)
-        usingDashTts = false
       },
     }),
     timeoutPromise,
@@ -78,7 +71,6 @@ function speakWithLocalTts(text: string, onEnd?: () => void): void {
   if (!isSpeechSupported()) return
 
   const utterance = new SpeechSynthesisUtterance(text)
-  localUtterance = utterance
 
   // 尝试选择中文语音
   const voices = window.speechSynthesis.getVoices()
@@ -93,12 +85,10 @@ function speakWithLocalTts(text: string, onEnd?: () => void): void {
   utterance.volume = 1.0
 
   utterance.onend = () => {
-    localUtterance = null
     onEnd?.()
   }
 
   utterance.onerror = () => {
-    localUtterance = null
     onEnd?.()
   }
 
@@ -160,12 +150,10 @@ function buildMealAnnouncement(
 export function stopSpeaking(): void {
   // 停止 DashScope TTS
   dashStop()
-  usingDashTts = false
 
   // 停止本地语音
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel()
-    localUtterance = null
   }
 }
 

@@ -1,133 +1,182 @@
-import { useState, useEffect } from 'react'
-import { Link, ArrowLeft, Package, Truck, CheckCircle, TrendingUp, Users, ClipboardList, BarChart3, Factory } from 'lucide-react'
-import { storage, Order, FactoryOrder, mockFactories } from '../store'
+import { useState, useEffect, useMemo } from 'react'
+import { Link, ArrowLeft, Package, Truck, CheckCircle, Users, ClipboardList, BarChart3, Factory, ShoppingBag, DollarSign, TrendingUp } from 'lucide-react'
+import { storage, Order, FactoryOrder } from '../store'
+import LoginGate, { useCurrentUser } from '../components/LoginGate'
 
 export default function DistributorPortal() {
+  return (
+    <LoginGate role="distributor" title="分销端 - 选择身份" gradient="from-amber-600 via-orange-600 to-amber-500" icon={Truck}>
+      <DistributorPortalContent />
+    </LoginGate>
+  )
+}
+
+function DistributorPortalContent() {
+  const { currentUser } = useCurrentUser()
   const [orders, setOrders] = useState<Order[]>([])
   const [factoryOrders, setFactoryOrders] = useState<FactoryOrder[]>([])
-  const [activeTab, setActiveTab] = useState<'pending' | 'summary' | 'factories' | 'deliveries' | 'delivered'>('pending')
+  const [activeTab, setActiveTab] = useState<'approved' | 'summary' | 'factories' | 'delivery' | 'delivered'>('approved')
 
   useEffect(() => {
     setOrders(storage.getOrders())
-    const foData = localStorage.getItem('icooker_factory_orders')
-    setFactoryOrders(foData ? JSON.parse(foData) : [])
+    setFactoryOrders(storage.getFactoryOrders())
+    const unsubOrders = storage.subscribeToOrderChanges(() => setOrders(storage.getOrders()))
+    const unsubFO = storage.subscribeToFactoryOrderChanges(() => setFactoryOrders(storage.getFactoryOrders()))
+    return () => { unsubOrders(); unsubFO() }
   }, [])
 
-  const approvedOrders = orders.filter(o => o.status === 'approved')
-  const processingOrders = orders.filter(o => o.status === 'processing')
-  const pendingDeliveryFactoryOrders = factoryOrders.filter(fo => fo.status === 'completed')
-  const deliveredFactoryOrders = factoryOrders.filter(fo => fo.status === 'delivered')
+  const myCustomerPhones = useMemo(() => {
+    const accounts = storage.getAccounts<{phone:string;distributorId:string}>('customer')
+    return new Set(accounts.filter(a => a.distributorId === currentUser?.id).map(a => a.phone))
+  }, [currentUser])
+
+  const myOrders = useMemo(() => orders.filter(o => myCustomerPhones.has(o.customerPhone)), [orders, myCustomerPhones])
+  const approvedOrders = myOrders.filter(o => o.status === 'approved')
+  const processingOrders = myOrders.filter(o => o.status === 'processing')
+
+  const myFactoryOrders = useMemo(
+    () => factoryOrders.filter(fo => fo.distributorId === currentUser?.id),
+    [factoryOrders, currentUser]
+  )
+  const pendingDeliveryFactoryOrders = myFactoryOrders.filter(fo => fo.status === 'completed')
+  const deliveredFactoryOrders = myFactoryOrders.filter(fo => fo.status === 'delivered')
 
   const handleBatchCreate = () => {
     if (approvedOrders.length === 0) return
-    const newFactoryOrders: FactoryOrder[] = mockFactories.map((factory, idx) => {
-      const assignedOrders = approvedOrders.filter((_, i) => i % mockFactories.length === idx)
-      const items = assignedOrders.flatMap(o => o.items)
-      const totalAmount = items.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)
-      return {
-        id: `FO-${Date.now()}-${idx}`,
-        factoryName: factory.name,
-        items,
-        totalAmount,
-        status: 'pending',
-        createdAt: new Date().toISOString()
-      }
-    })
-    const updatedFo = [...factoryOrders, ...newFactoryOrders]
-    localStorage.setItem('icooker_factory_orders', JSON.stringify(updatedFo))
-    setFactoryOrders(updatedFo)
-    approvedOrders.forEach(order => {
-      storage.updateOrder(order.id, { status: 'processing' })
-    })
-    setOrders(storage.getOrders())
-    setActiveTab('factories')
-  }
+    const factoryAccounts = storage.getAccounts<{id:string;name:string}>('factory')
+    if (factoryAccounts.length === 0) { alert('没有可用的工厂账号，请先在管理端添加工厂'); return }
 
-  const handleCompleteDelivery = (factoryOrderId: string) => {
-    const updatedFo: FactoryOrder[] = factoryOrders.map(fo =>
-      fo.id === factoryOrderId ? { ...fo, status: 'delivered' as const } : fo
-    )
-    localStorage.setItem('icooker_factory_orders', JSON.stringify(updatedFo))
-    setFactoryOrders(updatedFo)
-    const relatedCustomerOrders = orders.filter(o => o.status === 'completed')
-    if (relatedCustomerOrders.length > 0) {
-      relatedCustomerOrders.forEach(order => {
-        storage.updateOrder(order.id, { status: 'delivered' })
+    const previousOrders = storage.getOrders()
+    const previousFO = storage.getFactoryOrders()
+
+    try {
+      const newFactoryOrders: FactoryOrder[] = factoryAccounts.map((factory, idx) => {
+        const assignedOrders = approvedOrders.filter((_, i) => i % factoryAccounts.length === idx)
+        const itemMap = new Map<string, { mealName: string; quantity: number; unitPrice: number; days: string[] }>()
+        assignedOrders.flatMap(o => o.items).forEach(item => {
+          const key = `${item.mealName}|${item.days.join(',')}`
+          const existing = itemMap.get(key)
+          if (existing) { existing.quantity += item.quantity }
+          else { itemMap.set(key, { ...item }) }
+        })
+        const items = Array.from(itemMap.values())
+        const totalAmount = items.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)
+        const serviceNames = [...new Set(assignedOrders.map(o => o.serviceName).filter(Boolean))]
+        const customerOrderIds = assignedOrders.map(o => o.id)
+        return {
+          id: `FO-${Date.now()}-${idx}`,
+          factoryId: factory.id, factoryName: factory.name,
+          items, totalAmount, status: 'pending' as const,
+          createdAt: new Date().toISOString(),
+          distributorName: currentUser?.name, distributorId: currentUser?.id,
+          serviceName: serviceNames.join(', '), customerOrderIds,
+        }
       })
+
+      newFactoryOrders.forEach(fo => storage.saveFactoryOrder(fo))
+      approvedOrders.forEach(order => {
+        storage.updateOrder(order.id, { status: 'processing', distributorId: currentUser?.id, distributorName: currentUser?.name })
+      })
+
+      setFactoryOrders(storage.getFactoryOrders())
       setOrders(storage.getOrders())
+      setActiveTab('factories')
+    } catch (e) {
+      console.error('[Distributor] 批量创建失败，回滚', e)
+      localStorage.setItem('icooker_orders', JSON.stringify(previousOrders))
+      localStorage.setItem('icooker_factory_orders', JSON.stringify(previousFO))
+      setFactoryOrders(previousFO); setOrders(previousOrders)
+      alert('操作失败，已回滚。请重试。')
     }
   }
 
+  const handleCompleteDelivery = (factoryOrderId: string) => {
+    const fo = storage.getFactoryOrders().find(o => o.id === factoryOrderId)
+    if (!fo || fo.distributorId !== currentUser?.id) return
+    const previousOrders = storage.getOrders(); const previousFO = storage.getFactoryOrders()
+    try {
+      storage.updateFactoryOrder(factoryOrderId, { status: 'delivered' })
+      if (fo?.customerOrderIds?.length) {
+        fo.customerOrderIds.forEach(orderId => storage.updateOrder(orderId, { status: 'delivered' }))
+      }
+      setFactoryOrders(storage.getFactoryOrders()); setOrders(storage.getOrders())
+    } catch (e) {
+      console.error('[Distributor] 配送完成失败，回滚', e)
+      localStorage.setItem('icooker_orders', JSON.stringify(previousOrders))
+      localStorage.setItem('icooker_factory_orders', JSON.stringify(previousFO))
+      setFactoryOrders(previousFO); setOrders(previousOrders)
+    }
+  }
+
+  const statColors = ['#3b82f6', '#8b5cf6', '#f97316', '#10b981']
+
   const stats = [
-    { label: '待汇总', value: approvedOrders.length, icon: Package, gradient: 'from-blue-500 to-cyan-500' },
-    { label: '工厂订单', value: factoryOrders.length, icon: Factory, gradient: 'from-violet-500 to-purple-500' },
-    { label: '待配送', value: pendingDeliveryFactoryOrders.length, icon: Truck, gradient: 'from-amber-500 to-orange-500' },
-    { label: '已完成', value: deliveredFactoryOrders.length, icon: Users, gradient: 'from-emerald-500 to-green-500' },
+    { label: '待汇总', value: approvedOrders.length, icon: Package, colorIdx: 0 },
+    { label: '工厂订单', value: myFactoryOrders.length, icon: Factory, colorIdx: 1 },
+    { label: '待配送', value: pendingDeliveryFactoryOrders.length, icon: Truck, colorIdx: 2 },
+    { label: '已完成', value: deliveredFactoryOrders.length, icon: Users, colorIdx: 3 },
   ]
 
   const tabs = [
-    { id: 'pending' as const, label: '待汇总', count: approvedOrders.length, icon: ClipboardList },
+    { id: 'approved' as const, label: '待汇总', count: approvedOrders.length, icon: ClipboardList },
     { id: 'summary' as const, label: '订单统计', count: null, icon: BarChart3 },
-    { id: 'factories' as const, label: '工厂订单', count: factoryOrders.length, icon: Factory },
-    { id: 'deliveries' as const, label: '配送管理', count: pendingDeliveryFactoryOrders.length, icon: Truck },
+    { id: 'factories' as const, label: '工厂订单', count: myFactoryOrders.length, icon: Factory },
+    { id: 'delivery' as const, label: '配送管理', count: pendingDeliveryFactoryOrders.length, icon: Truck },
   ]
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-amber-50/20 to-slate-50">
-      {/* Header */}
-      <header className="relative overflow-hidden bg-gradient-to-r from-amber-600 via-orange-600 to-amber-500">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE1YzMuMzE0IDAgNi0yLjY4NiA2LTZzLTIuNjg2LTYtNi02LTYgMi42ODYtNiA2IDIuNjg2IDYgNiA2em0wIDMwYzMuMzE0IDAgNi0yLjY4NiA2LTZzLTIuNjg2LTYtNi02LTYgMi42ODYtNiA2IDIuNjg2IDYgNiA2eiIvPjwvZz48L2c+PC9zdmc+')] opacity-30" />
+    <div className="min-h-screen" style={{ background: 'hsl(30 20% 98%)' }}>
+      <header className="relative overflow-hidden bg-gradient-to-br from-amber-600 via-orange-600 to-amber-500">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.1),transparent_50%)]" />
         <div className="relative mx-auto max-w-7xl px-6 py-8">
-          <Link to="/" className="mb-6 inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-medium text-white/90 backdrop-blur transition-colors hover:bg-white/20 hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-            返回首页
+          <Link to="/" className="mb-4 inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white/85 backdrop-blur transition-colors hover:bg-white/20 hover:text-white">
+            <ArrowLeft className="h-4 w-4" /> 返回首页
           </Link>
-          <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 shadow-lg backdrop-blur">
-              <Truck className="h-7 w-7 text-white" />
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/12">
+              <Truck className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-white">分销端</h1>
-              <p className="mt-1 text-white/80">汇总订单、向工厂下单、配送管理</p>
+              <h1 className="font-display text-2xl font-bold tracking-tight text-white">分销端</h1>
+              <p className="mt-0.5 text-sm text-white/80">{currentUser?.name || ''} · 汇总订单、向工厂下单、配送管理</p>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
+      <main className="mx-auto max-w-7xl px-6 py-6">
         {/* Stats */}
-        <div className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
+        <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
           {stats.map((stat) => (
-            <div key={stat.label} className="rounded-2xl border border-white/60 bg-white/80 p-5 shadow-lg shadow-slate-200/50 backdrop-blur transition-all hover:-translate-y-0.5 hover:shadow-xl">
-              <div className="mb-2 flex items-center justify-between">
-                <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${stat.gradient} shadow-md`}>
+            <div key={stat.label} className="rounded-lg bg-white px-5 py-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[28px] font-bold tabular-nums leading-none text-foreground">{stat.value}</p>
+                  <p className="mt-1.5 text-xs font-medium text-muted-foreground">{stat.label}</p>
+                </div>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: statColors[stat.colorIdx] }}>
                   <stat.icon className="h-5 w-5 text-white" />
                 </div>
-                <span className="text-2xl font-bold tabular-nums text-slate-900">{stat.value}</span>
               </div>
-              <p className="text-sm font-medium text-slate-500">{stat.label}</p>
             </div>
           ))}
         </div>
 
         {/* Tabs */}
-        <div className="mb-8 flex gap-1 rounded-xl border border-slate-200 bg-white/60 p-1.5 shadow-sm backdrop-blur">
+        <div className="mb-6 flex gap-1 rounded-lg bg-muted p-1">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-all ${
-                activeTab === tab.id
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-md shadow-amber-200/50'
-                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+              className={`flex flex-1 items-center justify-center gap-1.5 rounded px-3.5 py-2 text-sm font-medium transition-colors ${
+                activeTab === tab.id ? 'bg-gray-900 text-white' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
               <tab.icon className="h-4 w-4" />
               <span className="hidden sm:inline">{tab.label}</span>
               {tab.count !== null && tab.count > 0 && (
-                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                  activeTab === tab.id ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-700'
-                }`}>
+                <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${activeTab === tab.id ? 'bg-white/20 text-white' : ''}`}
+                  style={activeTab !== tab.id ? { background: 'hsl(30 12% 93%)', color: 'hsl(15 55% 40%)' } : undefined}>
                   {tab.count}
                 </span>
               )}
@@ -135,41 +184,36 @@ export default function DistributorPortal() {
           ))}
         </div>
 
-        {/* Tab Content */}
         <div className="animate-fade-in">
-          {activeTab === 'pending' && (
+          {activeTab === 'approved' && (
             <div>
               {approvedOrders.length > 0 ? (
                 <div>
-                  <div className="mb-6 overflow-hidden rounded-2xl border border-amber-200/50 bg-gradient-to-r from-amber-50 to-orange-50 p-6">
+                  <div className="mb-5 rounded-lg bg-white px-5 py-4">
                     <div className="flex items-center justify-between">
                       <div>
-                        <h3 className="text-lg font-bold text-slate-900">待汇总订单 ({approvedOrders.length})</h3>
-                        <p className="mt-1 text-sm text-slate-600">以下订单已通过审核，可以汇总并向工厂下单</p>
+                        <h3 className="font-display text-sm font-bold text-foreground">待汇总订单 ({approvedOrders.length})</h3>
+                        <p className="mt-0.5 text-xs text-muted-foreground">以下订单已通过审核，可以汇总并向工厂下单</p>
                       </div>
-                      <button
-                        onClick={handleBatchCreate}
-                        className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-amber-200/50 transition-all hover:shadow-xl hover:shadow-amber-200/70"
-                      >
+                      <button onClick={handleBatchCreate} className="rounded-md bg-gray-900 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800">
                         批量创建工厂订单
                       </button>
                     </div>
                   </div>
-
-                  <div className="space-y-4 stagger-children">
+                  <div className="space-y-3 stagger-children">
                     {approvedOrders.map(order => (
-                      <div key={order.id} className="rounded-2xl border border-white/60 bg-white/80 p-6 shadow-lg shadow-slate-200/50 backdrop-blur transition-all hover:shadow-xl">
+                      <div key={order.id} className="rounded-lg bg-white px-5 py-4">
                         <div className="flex items-start justify-between">
                           <div>
-                            <h4 className="font-semibold text-slate-900">{order.id}</h4>
-                            <p className="mt-1 text-sm text-slate-500">{order.customerName} · {order.customerPhone}</p>
+                            <h4 className="font-semibold text-foreground">{order.id}</h4>
+                            <p className="mt-0.5 text-sm text-muted-foreground">{order.customerName} · {order.customerPhone}</p>
                           </div>
-                          <span className="text-xl font-bold text-orange-500">${order.totalAmount}</span>
+                          <span className="text-lg font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${order.totalAmount}</span>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
                           {order.items.map((item, idx) => (
-                            <span key={idx} className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {item.mealName} <span className="text-orange-500">x{item.quantity}</span>
+                            <span key={idx} className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              {item.mealName} <span style={{ color: 'hsl(15 55% 40%)' }}>x{item.quantity}</span>
                             </span>
                           ))}
                         </div>
@@ -184,42 +228,49 @@ export default function DistributorPortal() {
           )}
 
           {activeTab === 'summary' && (
-            <div className="rounded-2xl border border-white/60 bg-white/80 p-6 shadow-lg shadow-slate-200/50 backdrop-blur">
-              <h3 className="mb-6 text-lg font-bold text-slate-900">订单统计</h3>
-              <div className="grid gap-8 md:grid-cols-2">
-                <div>
-                  <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">按状态统计</h4>
-                  <div className="space-y-3">
-                    {[
-                      { label: '总订单数', value: orders.length, color: 'text-slate-900' },
-                      { label: '待审核', value: orders.filter(o => o.status === 'pending').length, color: 'text-amber-600' },
-                      { label: '已审核', value: approvedOrders.length, color: 'text-blue-600' },
-                      { label: '生产中', value: processingOrders.length, color: 'text-violet-600' },
-                      { label: '已完成', value: orders.filter(o => o.status === 'delivered').length, color: 'text-emerald-600' },
-                    ].map(row => (
-                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                        <span className="text-sm text-slate-600">{row.label}</span>
-                        <span className={`text-lg font-bold tabular-nums ${row.color}`}>{row.value}</span>
+            <div className="animate-fade-in space-y-6">
+              <div className="grid gap-4 sm:grid-cols-3 stagger-children">
+                {[
+                  { label: '总订单', value: myOrders.length, icon: ShoppingBag, colorIdx: 0 },
+                  { label: '总收入', value: `$${myOrders.reduce((sum, o) => sum + o.totalAmount, 0)}`, icon: DollarSign, colorIdx: 2 },
+                  { label: '均单金额', value: `$${myOrders.length ? Math.round(myOrders.reduce((sum, o) => sum + o.totalAmount, 0) / myOrders.length) : 0}`, icon: TrendingUp, colorIdx: 3 },
+                ].map((m) => (
+                  <div key={m.label} className="rounded-lg bg-white px-5 py-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[28px] font-bold tabular-nums leading-none text-foreground">{m.value}</p>
+                        <p className="mt-1.5 text-xs font-medium text-muted-foreground">{m.label}</p>
                       </div>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h4 className="mb-4 text-sm font-semibold uppercase tracking-wider text-slate-400">收入统计</h4>
-                  <div className="space-y-3">
-                    <div className="rounded-xl bg-gradient-to-r from-orange-50 to-amber-50 p-4">
-                      <span className="text-sm text-slate-600">总金额</span>
-                      <p className="mt-1 text-3xl font-bold text-orange-500">
-                        ${orders.reduce((sum, o) => sum + o.totalAmount, 0)}
-                      </p>
-                    </div>
-                    <div className="rounded-xl bg-slate-50 p-4">
-                      <span className="text-sm text-slate-600">平均订单金额</span>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
-                        ${orders.length ? Math.round(orders.reduce((sum, o) => sum + o.totalAmount, 0) / orders.length) : 0}
-                      </p>
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: statColors[m.colorIdx] }}>
+                        <m.icon className="h-5 w-5 text-white" />
+                      </div>
                     </div>
                   </div>
+                ))}
+              </div>
+
+              <div className="rounded-lg bg-white px-6 py-5">
+                <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground">按状态统计</h4>
+                <div className="space-y-2.5">
+                  {[
+                    { label: '待审核', value: myOrders.filter(o => o.status === 'pending').length, bar: '#f97316' },
+                    { label: '已审核', value: approvedOrders.length, bar: '#3b82f6' },
+                    { label: '生产中', value: processingOrders.length, bar: '#8b5cf6' },
+                    { label: '已完成', value: myOrders.filter(o => o.status === 'delivered').length, bar: '#10b981' },
+                    { label: '待配送', value: pendingDeliveryFactoryOrders.length, bar: '#f59e0b' },
+                  ].map(row => {
+                    const max = Math.max(...[myOrders.length, 1])
+                    const pct = Math.round((row.value / max) * 100)
+                    return (
+                      <div key={row.label} className="flex items-center gap-3">
+                        <span className="w-14 text-sm text-muted-foreground">{row.label}</span>
+                        <div className="flex-1 h-4 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: row.bar }} />
+                        </div>
+                        <span className="w-8 text-right text-sm font-bold tabular-nums text-foreground">{row.value}</span>
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             </div>
@@ -227,33 +278,39 @@ export default function DistributorPortal() {
 
           {activeTab === 'factories' && (
             <div>
-              {factoryOrders.length > 0 ? (
-                <div className="space-y-4 stagger-children">
-                  {factoryOrders.map(fo => (
-                    <div key={fo.id} className="rounded-2xl border border-white/60 bg-white/80 shadow-lg shadow-slate-200/50 backdrop-blur transition-all hover:shadow-xl">
-                      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              {myFactoryOrders.length > 0 ? (
+                <div className="space-y-3 stagger-children">
+                  {myFactoryOrders.map(fo => (
+                    <div key={fo.id} className="rounded-lg bg-white">
+                      <div className="flex items-center justify-between px-5 py-3.5">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100">
-                            <Factory className="h-5 w-5 text-emerald-600" />
+                          <div className="flex h-9 w-9 items-center justify-center rounded-md" style={{ background: 'hsl(140 12% 94%)' }}>
+                            <Factory className="h-4.5 w-4.5" style={{ color: 'hsl(140 12% 40%)' }} />
                           </div>
                           <div>
-                            <h3 className="font-semibold text-slate-900">{fo.factoryName}</h3>
-                            <p className="text-xs text-slate-500">{fo.id}</p>
+                            <h3 className="font-semibold text-foreground">{fo.factoryName}</h3>
+                            <p className="text-xs text-muted-foreground">{fo.id}</p>
+                            {(fo.serviceName || fo.distributorName) && (
+                              <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                                {fo.serviceName && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-600">{fo.serviceName}</span>}
+                                {fo.distributorName && <><span>&rarr;</span><span className="rounded px-1.5 py-0.5" style={{ background: 'hsl(30 25% 93%)', color: 'hsl(15 55% 42%)' }}>{fo.distributorName}</span></>}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <StatusBadge status={fo.status} />
                       </div>
-                      <div className="p-6">
-                        <div className="mb-4 flex flex-wrap gap-2">
+                      <div className="px-5 py-4">
+                        <div className="mb-3 flex flex-wrap gap-1.5">
                           {fo.items.map((item, idx) => (
-                            <span key={idx} className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {item.mealName} <span className="text-orange-500">x{item.quantity}</span>
+                            <span key={idx} className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              {item.mealName} <span style={{ color: 'hsl(15 55% 40%)' }}>x{item.quantity}</span>
                             </span>
                           ))}
                         </div>
-                        <div className="flex items-center justify-between border-t border-slate-100 pt-4">
-                          <span className="text-sm font-medium text-slate-500">总计</span>
-                          <span className="text-xl font-bold text-orange-500">${fo.totalAmount}</span>
+                        <div className="flex items-center justify-between pt-3">
+                          <span className="text-sm font-medium text-muted-foreground">总计</span>
+                          <span className="text-lg font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${fo.totalAmount}</span>
                         </div>
                       </div>
                     </div>
@@ -265,42 +322,44 @@ export default function DistributorPortal() {
             </div>
           )}
 
-          {activeTab === 'deliveries' && (
+          {activeTab === 'delivery' && (
             <div>
-              <div className="mb-6 flex gap-2">
-                <button onClick={() => setActiveTab('deliveries')} className="rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-amber-200/50">
+              <div className="mb-5 flex gap-2">
+                <button onClick={() => setActiveTab('delivery')} className="rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white">
                   待配送 ({pendingDeliveryFactoryOrders.length})
                 </button>
-                <button onClick={() => setActiveTab('delivered')} className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition-colors hover:bg-slate-50">
+                <button onClick={() => setActiveTab('delivered')} className="rounded-md bg-muted px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted">
                   已送达 ({deliveredFactoryOrders.length})
                 </button>
               </div>
 
               {pendingDeliveryFactoryOrders.length > 0 ? (
-                <div className="space-y-4 stagger-children">
+                <div className="space-y-3 stagger-children">
                   {pendingDeliveryFactoryOrders.map(fo => (
-                    <div key={fo.id} className="rounded-2xl border border-white/60 bg-white/80 shadow-lg shadow-slate-200/50 backdrop-blur transition-all hover:shadow-xl">
-                      <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+                    <div key={fo.id} className="rounded-lg bg-white">
+                      <div className="flex items-center justify-between px-5 py-3.5">
                         <div>
-                          <h3 className="font-semibold text-slate-900">{fo.factoryName}</h3>
-                          <p className="text-xs text-slate-500">{fo.id} · 共 {fo.items.length} 种餐品</p>
+                          <h3 className="font-semibold text-foreground">{fo.factoryName}</h3>
+                          <p className="text-xs text-muted-foreground">{fo.id} · 共 {fo.items.length} 种餐品</p>
+                          {(fo.serviceName || fo.distributorName) && (
+                            <div className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                              {fo.serviceName && <span className="rounded bg-violet-50 px-1.5 py-0.5 text-violet-600">{fo.serviceName}</span>}
+                              {fo.distributorName && <><span>&rarr;</span><span className="rounded px-1.5 py-0.5" style={{ background: 'hsl(30 25% 93%)', color: 'hsl(15 55% 42%)' }}>{fo.distributorName}</span></>}
+                            </div>
+                          )}
                         </div>
-                        <span className="text-lg font-bold text-orange-500">${fo.totalAmount}</span>
+                        <span className="text-lg font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${fo.totalAmount}</span>
                       </div>
-                      <div className="p-6">
-                        <div className="mb-4 flex flex-wrap gap-2">
+                      <div className="px-5 py-4">
+                        <div className="mb-3 flex flex-wrap gap-1.5">
                           {fo.items.map((item, idx) => (
-                            <span key={idx} className="rounded-lg bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
-                              {item.mealName} <span className="text-orange-500">x{item.quantity}</span>
+                            <span key={idx} className="rounded bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                              {item.mealName} <span style={{ color: 'hsl(15 55% 40%)' }}>x{item.quantity}</span>
                             </span>
                           ))}
                         </div>
-                        <button
-                          onClick={() => handleCompleteDelivery(fo.id)}
-                          className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-500 py-3 text-sm font-semibold text-white shadow-md shadow-emerald-200/50 transition-all hover:shadow-lg"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                          确认送达
+                        <button onClick={() => handleCompleteDelivery(fo.id)} className="flex w-full items-center justify-center gap-2 rounded bg-gray-900 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800">
+                          <CheckCircle className="h-4 w-4" /> 确认送达
                         </button>
                       </div>
                     </div>
@@ -315,24 +374,24 @@ export default function DistributorPortal() {
           {activeTab === 'delivered' && (
             <div>
               {deliveredFactoryOrders.length > 0 ? (
-                <div className="space-y-4 stagger-children">
+                <div className="space-y-2.5 stagger-children">
                   {deliveredFactoryOrders.map(fo => (
-                    <div key={fo.id} className="rounded-2xl border border-slate-100 bg-white/60 p-6 backdrop-blur">
+                    <div key={fo.id} className="rounded-lg bg-white px-5 py-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="font-semibold text-slate-900">{fo.factoryName}</h3>
-                          <p className="text-xs text-slate-500">{fo.id} · 共 {fo.items.length} 种餐品</p>
+                          <h3 className="font-semibold text-foreground">{fo.factoryName}</h3>
+                          <p className="text-xs text-muted-foreground">{fo.id} · 共 {fo.items.length} 种餐品</p>
                         </div>
-                        <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">已送达</span>
+                        <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ background: 'hsl(140 12% 93%)', color: 'hsl(140 12% 40%)' }}>已送达</span>
                       </div>
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
-                        <div className="flex flex-wrap gap-1.5">
+                      <div className="mt-2.5 flex items-center justify-between pt-2.5">
+                        <div className="flex flex-wrap gap-1">
                           {fo.items.slice(0, 3).map((item, idx) => (
-                            <span key={idx} className="text-xs text-slate-400">{item.mealName}</span>
+                            <span key={idx} className="text-xs text-muted-foreground">{item.mealName}</span>
                           ))}
-                          {fo.items.length > 3 && <span className="text-xs text-slate-400">+{fo.items.length - 3}</span>}
+                          {fo.items.length > 3 && <span className="text-xs text-muted-foreground">+{fo.items.length - 3}</span>}
                         </div>
-                        <span className="font-bold text-orange-500">${fo.totalAmount}</span>
+                        <span className="font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${fo.totalAmount}</span>
                       </div>
                     </div>
                   ))}
@@ -349,23 +408,27 @@ export default function DistributorPortal() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { bg: string; text: string; label: string }> = {
-    pending: { bg: 'bg-amber-100', text: 'text-amber-700', label: '待接单' },
-    confirmed: { bg: 'bg-blue-100', text: 'text-blue-700', label: '已确认' },
-    completed: { bg: 'bg-emerald-100', text: 'text-emerald-700', label: '已完成' },
-    delivered: { bg: 'bg-slate-100', text: 'text-slate-700', label: '已送达' },
+  const config: Record<string, { bg: string; color: string; label: string }> = {
+    pending: { bg: 'hsl(30 25% 92%)', color: 'hsl(15 55% 40%)', label: '待接单' },
+    confirmed: { bg: '#dbeafe', color: '#1d4ed8', label: '已确认' },
+    completed: { bg: 'hsl(140 12% 93%)', color: 'hsl(140 12% 40%)', label: '已完成' },
+    delivered: { bg: '#f1f5f9', color: '#334155', label: '已送达' },
   }
   const c = config[status] || config.pending
-  return <span className={`rounded-full ${c.bg} px-3 py-1 text-xs font-semibold ${c.text}`}>{c.label}</span>
+  return (
+    <span className="rounded-full px-2.5 py-0.5 text-xs font-semibold" style={{ background: c.bg, color: c.color }}>
+      {c.label}
+    </span>
+  )
 }
 
 function EmptyState({ icon: Icon, text }: { icon: any; text: string }) {
   return (
-    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white/50 py-20 backdrop-blur">
-      <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100">
-        <Icon className="h-8 w-8 text-slate-400" />
+    <div className="flex flex-col items-center justify-center rounded-lg bg-white py-16">
+      <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-md bg-muted">
+        <Icon className="h-7 w-7" style={{ color: 'hsl(30 8% 78%)' }} />
       </div>
-      <p className="text-lg font-medium text-slate-600">{text}</p>
+      <p className="text-sm font-medium text-muted-foreground">{text}</p>
     </div>
   )
 }
