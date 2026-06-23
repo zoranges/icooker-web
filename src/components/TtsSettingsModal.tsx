@@ -47,27 +47,27 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
     }
   }
 
-  const primaryColor = 'hsl(15 55% 42%)'
-  const borderColor = 'hsl(30 8% 90%)'
+  const primaryColor = 'hsl(168 72% 36%)'
+  const borderColor = 'hsl(210 15% 92%)'
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 backdrop-blur-sm" style={{ background: 'hsl(20 12% 10% / 0.35)' }}>
-      <div className="mx-4 w-full max-w-lg overflow-hidden rounded-lg border bg-white shadow-xl" style={{ borderColor }}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 backdrop-blur-sm" style={{ background: 'hsl(215 25% 12% / 0.35)' }}>
+      <div className="mx-4 w-full max-w-lg overflow-hidden rounded-xl border border-slate-100 bg-white shadow-xl">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${borderColor}` }}>
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl shadow-sm" style={{ background: `linear-gradient(135deg, ${primaryColor}, hsl(32 35% 48%))` }}>
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-teal-600 to-cyan-600 shadow-sm">
               <Settings className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h2 className="font-display text-lg text-foreground">语音设置</h2>
-              <p className="text-xs" style={{ color: 'hsl(20 8% 48%)' }}>调整 TTS 音色与语言</p>
+              <h2 className="text-lg font-bold text-foreground">语音设置</h2>
+              <p className="text-xs" style={{ color: 'hsl(215 10% 50%)' }}>调整 TTS 音色与语言</p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-slate-100"
-            style={{ color: 'hsl(20 8% 55%)' }}
+            style={{ color: 'hsl(215 10% 55%)' }}
           >
             <X className="h-4 w-4" />
           </button>
@@ -87,7 +87,7 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
                   style={{
                     borderColor: settings.language === lang.value ? primaryColor : borderColor,
                     background: settings.language === lang.value ? `${primaryColor}10` : 'white',
-                    color: settings.language === lang.value ? primaryColor : 'hsl(20 8% 45%)',
+                    color: settings.language === lang.value ? primaryColor : 'hsl(215 10% 45%)',
                     boxShadow: settings.language === lang.value ? `0 0 0 1px ${primaryColor}20` : 'none',
                   }}
                 >
@@ -103,7 +103,7 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
             <label className="mb-2 block text-sm font-medium text-foreground">播报音色</label>
             {Object.entries(VoiceGroups).map(([groupKey, group]) => (
               <div key={groupKey} className="mb-3">
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'hsl(20 8% 55%)' }}>{group.label}</p>
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider" style={{ color: 'hsl(215 10% 55%)' }}>{group.label}</p>
                 <div className="grid grid-cols-3 gap-1.5">
                   {group.voices.map(voiceName => {
                     const selected = settings.voice === voiceName
@@ -114,9 +114,9 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
                         onClick={() => setSettings({ ...settings, voice: voiceName })}
                         className="rounded-lg border px-2 py-2 text-left text-xs transition-all"
                         style={{
-                          borderColor: selected ? primaryColor : 'hsl(30 12% 90%)',
+                          borderColor: selected ? primaryColor : 'hsl(210 15% 92%)',
                           background: selected ? `${primaryColor}0A` : 'white',
-                          color: selected ? primaryColor : 'hsl(20 8% 45%)',
+                          color: selected ? primaryColor : 'hsl(215 10% 45%)',
                           boxShadow: selected ? `0 0 0 1px ${primaryColor}15` : 'none',
                         }}
                         title={desc}
@@ -125,7 +125,7 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
                           {selected && <Check className="h-3 w-3 flex-shrink-0" style={{ color: primaryColor }} />}
                           <span className="truncate font-medium">{VoiceLabels[voiceName] || voiceName}</span>
                         </div>
-                        <div className="mt-0.5 truncate text-[10px]" style={{ color: 'hsl(20 8% 60%)' }}>{voiceName}</div>
+                        <div className="mt-0.5 truncate text-[10px]" style={{ color: 'hsl(215 10% 60%)' }}>{voiceName}</div>
                       </button>
                     )
                   })}
@@ -136,12 +136,11 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center gap-3 px-6 py-4" style={{ borderTop: `1px solid ${borderColor}`, background: 'hsl(30 12% 96%)' }}>
+        <div className="flex items-center gap-3 border-t border-slate-100 bg-slate-50 px-6 py-4">
           <button
             onClick={handleTest}
             disabled={testing}
-            className="inline-flex items-center gap-1.5 rounded-lg border bg-white px-4 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
-            style={{ borderColor: 'hsl(30 12% 85%)', color: 'hsl(20 12% 30%)' }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700  transition-colors hover:bg-slate-50 disabled:opacity-50"
           >
             <Volume2 className="h-4 w-4" />
             {testing ? '试听中...' : '试听'}
@@ -149,15 +148,13 @@ export default function TtsSettingsModal({ open, onClose }: Props) {
           <div className="flex-1" />
           <button
             onClick={onClose}
-            className="rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:bg-slate-200/50"
-            style={{ color: 'hsl(20 8% 45%)' }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
           >
             取消
           </button>
           <button
             onClick={handleSave}
-            className="rounded-lg px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:opacity-90"
-            style={{ background: 'hsl(20 12% 15%)' }}
+            className="rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700"
           >
             保存
           </button>

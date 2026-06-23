@@ -50,15 +50,7 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
-        // Extended editorial palette
-        wheat: {
-          DEFAULT: "hsl(var(--color-wheat))",
-          bg: "hsl(var(--color-wheat-bg))",
-        },
-        terracotta: {
-          DEFAULT: "hsl(var(--color-terracotta))",
-          bg: "hsl(var(--color-terracotta-bg))",
-        },
+        // Extended palette
         sage: {
           DEFAULT: "hsl(var(--color-sage))",
           bg: "hsl(var(--color-sage-bg))",
@@ -67,15 +59,29 @@ const config: Config = {
           DEFAULT: "hsl(var(--color-slate-blue))",
           bg: "hsl(var(--color-slate-blue-bg))",
         },
+        cyanteal: {
+          DEFAULT: "hsl(var(--color-cyan))",
+          bg: "hsl(var(--color-cyan-bg))",
+        },
+        indigo: {
+          DEFAULT: "hsl(var(--color-indigo))",
+          bg: "hsl(var(--color-indigo-bg))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+        xl: "calc(var(--radius) + 4px)",
       },
       fontFamily: {
-        display: ["'DM Serif Display'", "Georgia", "'Times New Roman'", "serif"],
-        sans: ["'DM Sans'", "system-ui", "-apple-system", "sans-serif"],
+        display: ["'DM Sans'", "'Inter'", "system-ui", "-apple-system", "sans-serif"],
+        sans: ["'DM Sans'", "'Inter'", "system-ui", "-apple-system", "sans-serif"],
+      },
+      boxShadow: {
+        'card': '0 1px 3px 0 hsl(215 25% 12% / 0.04), 0 1px 2px -1px hsl(215 25% 12% / 0.04)',
+        'card-hover': '0 4px 12px -2px hsl(215 25% 12% / 0.08), 0 2px 4px -2px hsl(215 25% 12% / 0.04)',
+        'modal': '0 20px 60px -12px hsl(215 25% 12% / 0.15)',
       },
     },
   },

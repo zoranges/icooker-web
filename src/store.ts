@@ -9,6 +9,8 @@ export interface Order {
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'processing' | 'completed' | 'delivered'
   createdAt: string
   approvedAt?: string
+  cancelledAt?: string
+  rejectedAt?: string
   factoryOrderId?: string
   // 溯源信息
   serviceId?: string
@@ -23,6 +25,8 @@ export interface OrderItem {
   quantity: number
   unitPrice: number
   days: string[]
+  tags?: string
+  subCategory?: string
 }
 
 export interface Meal {
@@ -52,6 +56,22 @@ export interface FactoryOrder {
   serviceName?: string
   // 关联的老人订单ID列表
   customerOrderIds?: string[]
+}
+
+export interface InventoryItem {
+  mealName: string
+  stock: number
+  updatedAt: string
+}
+
+// 老人费用限额（由管理端统一设置）
+export interface SpendingLimit {
+  customerId: string        // 客户账号ID
+  customerPhone: string     // 客户手机号
+  dailyLimit: number        // 每日限额（0=不限）
+  weeklyLimit: number       // 每周限额（0=不限）
+  monthlyLimit: number      // 每月限额（0=不限）
+  updatedAt: string
 }
 
 import { mockMeals, mockFactories } from './data/meals'
@@ -164,6 +184,8 @@ const ACCOUNTS_FACTORIES_KEY = 'icooker_accounts_factories'
 const CURRENT_USER_KEY = 'icooker_current_user'
 const FACTORY_ORDERS_KEY = 'icooker_factory_orders'
 const CUSTOM_MEALS_KEY = 'icooker_custom_meals'
+const INVENTORY_KEY = 'icooker_inventory'
+const SPENDING_LIMITS_KEY = 'icooker_spending_limits'
 
 function getAccountsKey(role: string): string {
   switch (role) {
@@ -444,6 +466,110 @@ export const storage = {
     }
   },
 
+  // ── 库存管理 ──
+  getInventory: (): InventoryItem[] => {
+    const data = localStorage.getItem(INVENTORY_KEY)
+    return data ? JSON.parse(data) : []
+  },
+
+  saveInventory: (items: InventoryItem[]) => {
+    localStorage.setItem(INVENTORY_KEY, JSON.stringify(items))
+  },
+
+  updateStock: (mealName: string, delta: number) => {
+    const inventory = storage.getInventory()
+    const idx = inventory.findIndex(i => i.mealName === mealName)
+    if (idx !== -1) {
+      inventory[idx].stock = Math.max(0, inventory[idx].stock + delta)
+      inventory[idx].updatedAt = new Date().toISOString()
+    } else {
+      inventory.push({ mealName, stock: Math.max(0, delta), updatedAt: new Date().toISOString() })
+    }
+    storage.saveInventory(inventory)
+  },
+
+  // ── 费用限额管理（由管理端统一控制）──
+  getSpendingLimits: (): SpendingLimit[] => {
+    const data = localStorage.getItem(SPENDING_LIMITS_KEY)
+    return data ? JSON.parse(data) : []
+  },
+
+  saveSpendingLimits: (limits: SpendingLimit[]) => {
+    localStorage.setItem(SPENDING_LIMITS_KEY, JSON.stringify(limits))
+  },
+
+  getSpendingLimit: (customerPhone: string): SpendingLimit | null => {
+    return storage.getSpendingLimits().find(l => l.customerPhone === customerPhone) || null
+  },
+
+  setSpendingLimit: (customerId: string, customerPhone: string, daily: number, weekly: number, monthly: number) => {
+    const limits = storage.getSpendingLimits()
+    const idx = limits.findIndex(l => l.customerPhone === customerPhone)
+    const updated: SpendingLimit = {
+      customerId,
+      customerPhone,
+      dailyLimit: daily,
+      weeklyLimit: weekly,
+      monthlyLimit: monthly,
+      updatedAt: new Date().toISOString(),
+    }
+    if (idx !== -1) {
+      limits[idx] = updated
+    } else {
+      limits.push(updated)
+    }
+    storage.saveSpendingLimits(limits)
+  },
+
+  // 计算某周期内已消费金额
+  getSpentInPeriod: (customerPhone: string, period: 'daily' | 'weekly' | 'monthly'): number => {
+    const now = new Date()
+    const orders = storage.getOrders().filter(o =>
+      o.customerPhone === customerPhone &&
+      o.status !== 'cancelled' &&
+      o.status !== 'rejected' &&
+      o.status !== 'pending'
+    )
+    let startDate: Date
+    if (period === 'daily') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    } else if (period === 'weekly') {
+      const day = now.getDay()
+      startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((day + 6) % 7))
+      startDate.setHours(0, 0, 0, 0)
+    } else {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    }
+    return orders
+      .filter(o => new Date(o.createdAt) >= startDate)
+      .reduce((sum, o) => sum + o.totalAmount, 0)
+  },
+
+  // 检查预算是否充足，返回 { allowed, message }
+  checkBudget: (customerPhone: string, amount: number): { allowed: boolean; message: string } => {
+    const limit = storage.getSpendingLimit(customerPhone)
+    if (!limit) return { allowed: true, message: '' }
+
+    const checks: { period: 'daily' | 'weekly' | 'monthly'; label: string; limitVal: number }[] = [
+      { period: 'daily', label: '每日', limitVal: limit.dailyLimit },
+      { period: 'weekly', label: '每周', limitVal: limit.weeklyLimit },
+      { period: 'monthly', label: '每月', limitVal: limit.monthlyLimit },
+    ]
+
+    for (const { period, label, limitVal } of checks) {
+      if (limitVal <= 0) continue
+      const spent = storage.getSpentInPeriod(customerPhone, period)
+      const remaining = limitVal - spent
+      if (amount > remaining) {
+        return {
+          allowed: false,
+          message: `${label}限额 ¥${limitVal}，已花费 ¥${spent.toFixed(0)}，剩余 ¥${remaining.toFixed(0)}，本次订单 ¥${amount.toFixed(0)} 超出预算`,
+        }
+      }
+    }
+    return { allowed: true, message: '' }
+  },
+
   clearAll: () => {
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(CUSTOMER_INFO_KEY)
@@ -454,5 +580,7 @@ export const storage = {
     localStorage.removeItem(CURRENT_USER_KEY)
     localStorage.removeItem(FACTORY_ORDERS_KEY)
     localStorage.removeItem(CUSTOM_MEALS_KEY)
+    localStorage.removeItem(INVENTORY_KEY)
+    localStorage.removeItem(SPENDING_LIMITS_KEY)
   }
 }

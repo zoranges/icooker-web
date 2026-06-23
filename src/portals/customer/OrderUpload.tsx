@@ -330,7 +330,7 @@ export function OrderUpload() {
 
     // 将识别到的餐品转换为订单项
     const items: OrderItem[] = extractedMeals.map(meal => ({
-      mealName: `${meal.name} (${meal.day})`,
+      mealName: meal.name,
       quantity: meal.quantity,
       unitPrice: 25, // 默认单价
       days: [meal.day],
@@ -368,10 +368,17 @@ export function OrderUpload() {
     const today = new Date().toISOString().slice(0, 10)
     const duplicate = storage.getOrders().find(o =>
       o.customerPhone === formData.customerPhone &&
-      o.status === 'pending' &&
+      (o.status === 'pending' || o.status === 'approved') &&
       o.createdAt.startsWith(today)
     )
-    if (duplicate && !window.confirm(`您今天已有一个待审核订单 (${duplicate.id})。确定再提交一个吗？`)) return
+    if (duplicate && !window.confirm(`您今天已有一个已提交订单 (${duplicate.id})。确定再提交一个吗？`)) return
+
+    // 检查费用限额
+    const budgetCheck = storage.checkBudget(formData.customerPhone, totalAmount)
+    if (!budgetCheck.allowed) {
+      alert(`订单金额超出消费限额\n\n${budgetCheck.message}\n\n请联系管理员调整限额设置。`)
+      return
+    }
 
     storage.saveOrder(order)
     setSubmitted(true)
@@ -379,21 +386,21 @@ export function OrderUpload() {
 
   if (submitted) {
     return (
-      <div className="min-h-screen p-6" style={{ background: 'hsl(30 20% 98%)' }}>
-        <div className="max-w-2xl mx-auto rounded-lg bg-white p-8 text-center">
-          <CheckCircle className="w-20 h-20 mx-auto mb-4 text-green-500" />
-          <h2 className="text-2xl font-bold text-slate-900 mb-2 font-display">订单提交成功！</h2>
-          <p className="mb-6" style={{ color: 'hsl(20 8% 42%)' }}>服务机构将尽快审核您的订单</p>
+      <div className="min-h-screen p-6" style={{ background: 'hsl(210 20% 98%)' }}>
+        <div className="max-w-2xl mx-auto rounded-xl border border-slate-100 bg-white p-8 text-center ">
+          <CheckCircle className="w-20 h-20 mx-auto mb-4 text-teal-500" />
+          <h2 className="text-2xl font-bold text-slate-900 mb-2">订单提交成功！</h2>
+          <p className="mb-6 text-slate-500">分销商将尽快处理您的订单</p>
           <div className="flex gap-4 justify-center">
             <button
               onClick={() => navigate('/customer/orders')}
-              className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+              className="rounded-lg bg-teal-600 px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-teal-700"
             >
               查看订单
             </button>
             <button
               onClick={() => navigate('/customer')}
-              className="px-6 py-3 border rounded-lg transition-colors hover:bg-gray-50" style={{ borderColor: 'hsl(30 8% 90%)' }}
+              className="rounded-lg border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
             >
               返回首页
             </button>
@@ -404,19 +411,18 @@ export function OrderUpload() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: 'hsl(30 20% 98%)' }}>
-      <header className="border-b bg-white/95 backdrop-blur" style={{ borderColor: 'hsl(30 8% 90%)' }}>
+    <div className="min-h-screen" style={{ background: 'hsl(210 20% 98%)' }}>
+      <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-5 py-4">
-          <Link to="/customer" className="inline-flex items-center gap-2 text-sm font-medium transition-colors" style={{ color: 'hsl(20 8% 42%)' }}>
+          <Link to="/customer" className="inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition-colors hover:text-foreground">
             <ArrowLeft className="h-4 w-4" />
             返回老人端
           </Link>
-          <div className="hidden items-center gap-3 text-xs sm:flex" style={{ color: 'hsl(20 8% 42%)' }}>
+          <div className="hidden items-center gap-3 text-xs sm:flex text-slate-500">
             <button
               type="button"
               onClick={() => setShowTtsSettings(true)}
-              className="inline-flex items-center gap-1.5 rounded-lg border bg-white px-2.5 py-1.5 text-xs font-medium shadow-sm transition-colors hover:bg-[hsl(15,55%,42%,0.08)] hover:text-[hsl(15,55%,42%)] hover:border-[hsl(15,55%,42%,0.3)]"
-              style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600  transition-colors hover:bg-teal-50 hover:text-teal-600 hover:border-teal-200"
               title="语音设置"
             >
               <Settings className="h-3.5 w-3.5" />
@@ -431,20 +437,20 @@ export function OrderUpload() {
       <main className="mx-auto max-w-7xl px-5 py-6">
         <section className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm font-medium" style={{ color: 'hsl(15 55% 42%)' }}>订单录入</p>
-            <h2 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950 font-display">上传订单</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6" style={{ color: 'hsl(20 8% 42%)' }}>
-              上传菜单文件后核对识别结果，补全联系信息即可提交审核。
+            <p className="text-sm font-medium text-teal-600">订单录入</p>
+            <h2 className="mt-2 text-3xl font-semibold tracking-normal text-slate-950">上传订单</h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+              上传菜单文件后核对识别结果，补全联系信息即可提交。
             </p>
           </div>
-          <div className="grid grid-cols-3 overflow-hidden rounded-lg bg-white text-sm shadow-sm">
+          <div className="grid grid-cols-3 overflow-hidden rounded-xl border border-slate-100 bg-white text-sm ">
             {[
               ['1', '识别'],
               ['2', '核对'],
               ['3', '提交']
             ].map(([step, label], index) => (
               <div key={step} className="flex min-w-24 items-center gap-2 px-4 py-3">
-                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${index === 0 ? 'text-white' : 'bg-slate-100 text-slate-500'}`} style={index === 0 ? { background: 'hsl(15 55% 42%)' } : undefined}>
+                <span className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${index === 0 ? 'text-white bg-teal-600' : 'bg-slate-100 text-slate-500'}`}>
                   {step}
                 </span>
                 <span className={index === 0 ? 'font-medium text-slate-900' : 'text-slate-500'}>{label}</span>
@@ -455,30 +461,30 @@ export function OrderUpload() {
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <section className="space-y-6">
-            <div className="rounded-lg bg-white">
+            <div className="rounded-xl border border-slate-100 bg-white">
               <div className="flex items-center justify-between px-5 py-3">
                 <div>
-                  <h3 className="text-base font-semibold text-foreground font-display">订单文件</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">支持 JPG、PNG、PDF，单个文件最大 10MB</p>
+                  <h3 className="text-base font-semibold text-foreground">订单文件</h3>
+                  <p className="mt-1 text-sm text-slate-500">支持 JPG、PNG、PDF，单个文件最大 10MB</p>
                 </div>
-                <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium" style={{ color: 'hsl(20 8% 42%)' }}>自动识别</span>
+                <span className="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">自动识别</span>
               </div>
               <div className="p-4">
-                <div className="rounded-lg bg-slate-50/70 p-4 text-center transition-colors hover:bg-[hsl(15,55%,42%,0.04)] ring-1 ring-inset" style={{ '--tw-ring-color': 'hsl(30 8% 90%)' } as React.CSSProperties}>
+                <div className="rounded-xl bg-slate-50/70 p-4 text-center transition-colors hover:bg-teal-50/50 ring-1 ring-inset ring-slate-200">
                   {!uploadedImage ? (
                     <div>
                       {isRecognizing ? (
                         <div className="py-10">
-                          <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin" style={{ color: 'hsl(15 55% 42%)' }} />
+                          <Loader2 className="mx-auto mb-4 h-10 w-10 animate-spin text-teal-600" />
                           <p className="font-medium text-slate-900">正在处理文件</p>
-                          <p className="mt-2 text-sm" style={{ color: 'hsl(20 8% 42%)' }}>识别完成后会自动展示可核对的餐品清单</p>
+                          <p className="mt-2 text-sm text-slate-500">识别完成后会自动展示可核对的餐品清单</p>
                         </div>
                       ) : (
                         <div className="py-8">
-                          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-lg bg-white shadow-sm ring-1" style={{ boxShadow: '0 0 0 1px hsl(30 8% 90%)' }}>
-                            <Upload className="h-7 w-7" style={{ color: 'hsl(15 55% 42%)' }} />
+                          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-white ring-1 ring-slate-200">
+                            <Upload className="h-7 w-7 text-teal-600" />
                           </div>
-                          <label className="inline-flex cursor-pointer items-center justify-center rounded-md bg-gray-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800">
+                          <label className="inline-flex cursor-pointer items-center justify-center rounded-lg bg-teal-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700">
                             选择文件
                             <input
                               ref={fileInputRef}
@@ -488,21 +494,21 @@ export function OrderUpload() {
                               className="hidden"
                             />
                           </label>
-                          <p className="mt-3 text-sm" style={{ color: 'hsl(20 8% 42%)' }}>上传后将进入 OCR 识别队列</p>
+                          <p className="mt-3 text-sm text-slate-500">上传后将进入 OCR 识别队列</p>
                         </div>
                       )}
                     </div>
                   ) : uploadedImage === 'pdf' ? (
                     <div className="relative">
-                      <div className="rounded-lg bg-white p-8">
+                      <div className="rounded-xl bg-white p-8">
                         <Package className="mx-auto mb-4 h-12 w-12 text-red-500" />
                         <p className="font-medium text-slate-900">PDF 文件已上传</p>
-                        <p className="mt-2 text-sm" style={{ color: 'hsl(20 8% 42%)' }}>正在识别内容，请保持页面打开</p>
+                        <p className="mt-2 text-sm text-slate-500">正在识别内容，请保持页面打开</p>
                       </div>
                       <button
                         type="button"
                         onClick={clearImage}
-                        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white shadow-sm transition-colors hover:text-red-600" style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+                        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white  text-slate-500 transition-colors hover:text-red-600"
                         aria-label="移除文件"
                       >
                         <X className="h-4 w-4" />
@@ -510,11 +516,11 @@ export function OrderUpload() {
                     </div>
                   ) : (
                     <div className="relative">
-                      <img src={uploadedImage} alt="预览" className="mx-auto max-h-80 rounded-lg border object-contain shadow-sm" style={{ borderColor: 'hsl(30 8% 90%)' }} />
+                      <img src={uploadedImage} alt="预览" className="mx-auto max-h-80 rounded-xl border border-slate-200 object-contain " />
                       <button
                         type="button"
                         onClick={clearImage}
-                        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-md border bg-white shadow-sm transition-colors hover:text-red-600" style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+                        className="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white  text-slate-500 transition-colors hover:text-red-600"
                         aria-label="移除文件"
                       >
                         <X className="h-4 w-4" />
@@ -524,34 +530,34 @@ export function OrderUpload() {
                 </div>
 
                 {isRecognizing && (
-                  <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4">
-                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-blue-700">
+                  <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 p-4">
+                    <div className="mb-3 flex items-center gap-2 text-sm font-medium text-teal-700">
                       <Loader2 className="h-4 w-4 animate-spin" />
                       正在识别文件内容
                     </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-blue-100">
-                      <div className="h-full w-3/5 animate-pulse rounded-full bg-blue-600" />
+                    <div className="h-2 overflow-hidden rounded-full bg-teal-100">
+                      <div className="h-full w-3/5 animate-pulse rounded-full bg-teal-600" />
                     </div>
-                    <p className="mt-2 text-xs text-blue-700">PDF 文件可能需要 30-90 秒</p>
+                    <p className="mt-2 text-xs text-teal-700">PDF 文件可能需要 30-90 秒</p>
                   </div>
                 )}
 
                 {speaking && (
-                  <div className="mt-4 rounded-lg border p-4 animate-fade-in" style={{ borderColor: 'hsl(15 55% 42% / 0.3)', background: 'hsl(15 55% 42% / 0.06)' }}>
+                  <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 p-4 animate-fade-in">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl shadow-md animate-pulse-glow" style={{ background: 'hsl(15 55% 42%)' }}>
+                        <div className="flex h-10 w-10 items-center justify-center rounded-xl shadow-md animate-pulse-glow bg-teal-600">
                           <Volume2 className="h-5 w-5 text-white" />
                         </div>
                         <div>
-                          <p className="text-sm font-semibold" style={{ color: 'hsl(15 55% 42%)' }}>正在语音播报订餐信息</p>
-                          <p className="text-xs" style={{ color: 'hsl(15 55% 42%)' }}>请仔细核对播报内容是否正确</p>
+                          <p className="text-sm font-semibold text-teal-700">正在语音播报订餐信息</p>
+                          <p className="text-xs text-teal-600">请仔细核对播报内容是否正确</p>
                         </div>
                       </div>
                       <button
                         type="button"
                         onClick={() => { stopSpeaking(); setSpeaking(false) }}
-                        className="rounded-lg bg-white px-3 py-2 text-xs font-medium shadow-sm transition-colors hover:bg-[hsl(15,55%,42%,0.12)]" style={{ color: 'hsl(15 55% 42%)' }}
+                        className="rounded-lg bg-white px-3 py-2 text-xs font-medium shadow-sm text-teal-600 transition-colors hover:bg-teal-100"
                       >
                         停止
                       </button>
@@ -572,12 +578,12 @@ export function OrderUpload() {
                 <OCRResultTable htmlContent={ocrResult} />
 
                 {extractedMeals.length > 0 && (
-                  <div className="rounded-lg bg-white">
+                  <div className="rounded-xl border border-slate-100 bg-white">
                     <div className="flex items-center justify-between px-4 py-3">
                       <div className="flex items-center gap-2">
                         <CheckCircle className="h-5 w-5 text-emerald-600" />
-                        <h4 className="text-base font-semibold text-foreground font-display">点餐内容</h4>
-                        <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                        <h4 className="text-base font-semibold text-foreground">点餐内容</h4>
+                        <span className="rounded-md bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 border border-emerald-200">
                           {extractedMeals.length} 项
                         </span>
                       </div>
@@ -596,14 +602,9 @@ export function OrderUpload() {
                         }}
                         className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
                           speaking
-                            ? 'text-white shadow-md animate-pulse'
-                            : 'bg-slate-100 hover:bg-[hsl(15,55%,42%,0.08)] hover:text-[hsl(15,55%,42%)]'
+                            ? 'text-white shadow-md animate-pulse bg-teal-600'
+                            : 'bg-slate-100 text-slate-600 hover:bg-teal-50 hover:text-teal-600'
                         }`}
-                        style={
-                          speaking
-                            ? { background: 'hsl(15 55% 42%)' }
-                            : { color: 'hsl(20 8% 42%)' }
-                        }
                         title={speaking ? '停止播报' : '语音播报订餐信息'}
                       >
                         {speaking ? (
@@ -629,13 +630,13 @@ export function OrderUpload() {
                         return (
                           <div key={day} className="overflow-hidden rounded-lg">
                             {/* 星期标题 */}
-                            <div className="flex items-center justify-between border-b bg-slate-50 px-3 py-2" style={{ borderColor: 'hsl(30 8% 90%)' }}>
+                            <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-3 py-2">
                               <span className="text-sm font-semibold text-slate-800">{day}</span>
-                              <span className="text-xs" style={{ color: 'hsl(20 8% 42%)' }}>{dayMeals.length} 个餐品</span>
+                              <span className="text-xs text-slate-500">{dayMeals.length} 个餐品</span>
                             </div>
 
                             {/* 餐品列表 */}
-                            <div className="divide-y" style={{ borderColor: 'hsl(30 8% 90%)' }}>
+                            <div className="divide-y divide-slate-200">
                               {dayMeals.map((meal, idx) => {
                                 // 找到原始索引
                                 const originalIndex = extractedMeals.findIndex(m =>
@@ -649,8 +650,7 @@ export function OrderUpload() {
                                       <button
                                         type="button"
                                         onClick={() => startEditMeal(originalIndex)}
-                                        className="rounded-md border bg-white px-2.5 py-1 text-xs font-medium shadow-sm transition-colors hover:text-blue-600"
-                                        style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+                                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600  transition-colors hover:text-blue-600"
                                         title="编辑此餐品"
                                       >
                                         编辑
@@ -658,8 +658,7 @@ export function OrderUpload() {
                                       <button
                                         type="button"
                                         onClick={() => deleteMeal(originalIndex)}
-                                        className="rounded-md border bg-white px-2.5 py-1 text-xs font-medium shadow-sm transition-colors hover:text-red-600"
-                                        style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+                                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600  transition-colors hover:text-red-600"
                                         title="删除此餐品"
                                       >
                                         删除
@@ -692,9 +691,9 @@ export function OrderUpload() {
                                           className="inline-flex h-9 min-w-9 items-center justify-center rounded-md px-2 text-base font-semibold"
                                           style={
                                             meal.quantity === 1
-                                              ? { background: 'hsl(15 55% 42% / 0.08)', color: 'hsl(15 55% 42%)' }
+                                              ? { background: 'hsl(168 72% 36% / 0.08)', color: 'hsl(168 72% 36%)' }
                                               : meal.quantity <= 2
-                                              ? { background: 'hsl(15 55% 42% / 0.15)', color: 'hsl(15 55% 42%)' }
+                                              ? { background: 'hsl(168 72% 36% / 0.15)', color: 'hsl(168 72% 36%)' }
                                               : { background: 'hsl(0 70% 45% / 0.08)', color: 'hsl(0 70% 45%)' }
                                           }
                                         >
@@ -715,8 +714,7 @@ export function OrderUpload() {
                     <button
                       type="button"
                       onClick={addNewMeal}
-                      className="mx-6 mb-6 flex w-[calc(100%-3rem)] items-center justify-center gap-2 rounded-lg border border-dashed py-3 text-sm font-medium transition-colors hover:border-[hsl(15,55%,42%)] hover:bg-[hsl(15,55%,42%,0.04)]"
-                      style={{ borderColor: 'hsl(30 8% 90%)', color: 'hsl(20 8% 42%)' }}
+                      className="mx-6 mb-6 flex w-[calc(100%-3rem)] items-center justify-center gap-2 rounded-lg border border-dashed border-slate-200 py-3 text-sm font-medium text-slate-500 transition-colors hover:border-teal-400 hover:bg-teal-50/50 hover:text-teal-600"
                     >
                       <span className="text-lg leading-none">+</span>
                       <span className="font-medium">添加餐品（如果OCR漏识别）</span>
@@ -727,9 +725,9 @@ export function OrderUpload() {
                 {/* 编辑餐品对话框 */}
                 {editingMealIndex !== null && editingMealData && (
                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-white shadow-2xl">
-                      <div className="sticky top-0 flex items-center justify-between border-b bg-white px-6 py-4" style={{ borderColor: 'hsl(30 8% 90%)' }}>
-                        <h3 className="text-lg font-semibold text-slate-950 font-display">编辑餐品</h3>
+                    <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl">
+                      <div className="sticky top-0 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4">
+                        <h3 className="text-lg font-semibold text-slate-950">编辑餐品</h3>
                         <button
                           type="button"
                           onClick={() => { setEditingMealIndex(null); setEditingMealData({}); }}
@@ -746,8 +744,7 @@ export function OrderUpload() {
                           <select
                             value={editingMealData.day || '周一'}
                             onChange={(e) => setEditingMealData({ ...editingMealData, day: e.target.value })}
-                            className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'hsl(30 8% 90%)' }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                           >
                             {['周一', '周二', '周三', '周四', '周五', '周六', '周日'].map(day => (
                               <option key={day} value={day}>{day}</option>
@@ -761,8 +758,7 @@ export function OrderUpload() {
                           <select
                             value={editingMealData.subCategory || ''}
                             onChange={(e) => setEditingMealData({ ...editingMealData, subCategory: e.target.value })}
-                            className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'hsl(30 8% 90%)' }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                           >
                             {[
                               'Regular Main 常规主餐',
@@ -784,8 +780,7 @@ export function OrderUpload() {
                             type="text"
                             value={editingMealData.name || ''}
                             onChange={(e) => setEditingMealData({ ...editingMealData, name: e.target.value })}
-                            className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'hsl(30 8% 90%)' }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                             placeholder="输入餐品名称"
                           />
                         </div>
@@ -799,8 +794,7 @@ export function OrderUpload() {
                             max="10"
                             value={editingMealData.quantity || 1}
                             onChange={(e) => setEditingMealData({ ...editingMealData, quantity: parseInt(e.target.value) })}
-                            className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'hsl(30 8% 90%)' }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                           />
                         </div>
 
@@ -811,26 +805,24 @@ export function OrderUpload() {
                             type="text"
                             value={editingMealData.tags || ''}
                             onChange={(e) => setEditingMealData({ ...editingMealData, tags: e.target.value })}
-                            className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2"
-                            style={{ borderColor: 'hsl(30 8% 90%)' }}
+                            className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                             placeholder="如: LSF, LS, GF"
                           />
                         </div>
                       </div>
 
-                      <div className="sticky bottom-0 flex gap-3 border-t bg-slate-50 px-6 py-4" style={{ borderColor: 'hsl(30 8% 90%)' }}>
+                      <div className="sticky bottom-0 flex gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
                         <button
                           type="button"
                           onClick={() => { setEditingMealIndex(null); setEditingMealData({}); }}
-                          className="flex-1 rounded-md border px-4 py-2 text-sm font-medium text-slate-700 hover:bg-white"
-                          style={{ borderColor: 'hsl(30 8% 90%)' }}
+                          className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                         >
                           取消
                         </button>
                         <button
                           type="button"
                           onClick={saveEditedMeal}
-                          className="flex-1 rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800"
+                          className="flex-1 rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
                         >
                           保存
                         </button>
@@ -843,10 +835,10 @@ export function OrderUpload() {
           </section>
 
           <aside className="lg:sticky lg:top-6 lg:self-start">
-            <form onSubmit={handleSubmit} className="rounded-lg bg-white">
+            <form onSubmit={handleSubmit} className="rounded-xl border border-slate-100 bg-white">
               <div className="px-4 py-3">
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground font-display">
-                  <User className="h-4 w-4" style={{ color: 'hsl(15 55% 40%)' }} />
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                  <User className="h-4 w-4 text-teal-600" />
                   联系信息
                 </h3>
               </div>
@@ -858,8 +850,7 @@ export function OrderUpload() {
                     required
                     value={formData.customerName}
                     onChange={e => setFormData({ ...formData, customerName: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:outline-none focus:ring-2"
-                    style={{ borderColor: 'hsl(30 8% 90%)' }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900  transition focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     placeholder="请输入姓名"
                   />
                 </div>
@@ -870,8 +861,7 @@ export function OrderUpload() {
                     required
                     value={formData.customerPhone}
                     onChange={e => setFormData({ ...formData, customerPhone: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:outline-none focus:ring-2"
-                    style={{ borderColor: 'hsl(30 8% 90%)' }}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900  transition focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     placeholder="请输入联系电话"
                   />
                 </div>
@@ -881,33 +871,32 @@ export function OrderUpload() {
                     required
                     value={formData.customerAddress}
                     onChange={e => setFormData({ ...formData, customerAddress: e.target.value })}
-                    className="w-full resize-none rounded-md border px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:outline-none focus:ring-2"
-                    style={{ borderColor: 'hsl(30 8% 90%)' }}
+                    className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900  transition focus:outline-none focus:ring-2 focus:ring-teal-500/20"
                     rows={3}
                     placeholder="请输入详细配送地址"
                   />
                 </div>
 
-                <div className="rounded-lg border bg-slate-50 p-3" style={{ borderColor: 'hsl(30 8% 90%)' }}>
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="flex items-center justify-between text-xs">
-                    <span style={{ color: 'hsl(20 8% 42%)' }}>已识别餐品</span>
+                    <span className="text-slate-500">已识别餐品</span>
                     <span className="font-semibold text-slate-950">{extractedMeals.length} 项</span>
                   </div>
                   <div className="mt-2 flex items-center justify-between text-xs">
-                    <span style={{ color: 'hsl(20 8% 42%)' }}>预估金额</span>
-                    <span className="font-semibold" style={{ color: 'hsl(15 55% 42%)' }}>
+                    <span className="text-slate-500">预估金额</span>
+                    <span className="font-semibold text-teal-600">
                       ${extractedMeals.reduce((sum, meal) => sum + meal.quantity * 25, 0)}
                     </span>
                   </div>
                 </div>
 
-                <p className="text-[10px] leading-4" style={{ color: 'hsl(20 8% 42%)' }}>联系信息会保存在本机，便于下次继续填写。</p>
+                <p className="text-[10px] leading-4 text-slate-500">联系信息会保存在本机，便于下次继续填写。</p>
               </div>
 
               <div className="px-4 py-3">
                 <button
                   type="submit"
-                  className="inline-flex w-full items-center justify-center rounded-md bg-gray-900 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-teal-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-teal-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                   disabled={isRecognizing}
                 >
                   提交订单
@@ -922,4 +911,3 @@ export function OrderUpload() {
     </div>
   )
 }
-

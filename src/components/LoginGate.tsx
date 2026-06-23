@@ -18,7 +18,7 @@ interface LoginGateProps {
   children: React.ReactNode
   title: string
   description?: string
-  gradient: string
+  gradient?: string
   icon: React.ElementType
 }
 
@@ -50,7 +50,7 @@ function AccountSelectionScreen({ role, title, description, gradient, icon: Icon
   role: string
   title: string
   description?: string
-  gradient: string
+  gradient?: string
   icon: React.ElementType
   onLogin: (account: Account) => void
 }) {
@@ -71,22 +71,25 @@ function AccountSelectionScreen({ role, title, description, gradient, icon: Icon
     return null
   }
 
+  const resolvedGradient = gradient || 'from-teal-500 via-cyan-500 to-teal-600'
+
   return (
-    <div className="min-h-screen" style={{ background: 'hsl(30 20% 98%)' }}>
+    <div className="min-h-screen" style={{ background: 'hsl(210 20% 98%)' }}>
       {/* Header */}
-      <header className={`relative overflow-hidden bg-gradient-to-br ${gradient}`}>
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.1),transparent_50%)]" />
+      <header className={`relative overflow-hidden bg-gradient-to-br ${resolvedGradient}`}>
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.12),transparent_50%)]" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom_left,rgba(255,255,255,0.06),transparent_60%)]" />
         <div className="relative mx-auto max-w-2xl px-6 py-12">
-          <Link to="/" className="mb-5 inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white/85 backdrop-blur transition-colors hover:bg-white/20 hover:text-white">
+          <Link to="/" className="mb-6 inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3.5 py-2 text-sm font-medium text-white/90 backdrop-blur-md transition-all hover:bg-white/25 hover:text-white">
             <ArrowLeft className="h-4 w-4" />
             返回首页
           </Link>
           <div className="flex items-center gap-4">
-            <div className="flex h-13 w-13 items-center justify-center rounded-lg bg-white/12">
-              <Icon className="h-7 w-7 text-white" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white/15">
+              <Icon className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="font-display text-2xl tracking-tight text-white">{title}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-white">{title}</h1>
               {description && <p className="mt-1 text-sm text-white/80">{description}</p>}
             </div>
           </div>
@@ -95,34 +98,35 @@ function AccountSelectionScreen({ role, title, description, gradient, icon: Icon
 
       <main className="mx-auto max-w-2xl px-6 py-8">
         <div className="mb-6">
-          <h2 className="font-display text-xl text-foreground">选择身份</h2>
-          <p className="mt-1 text-sm" style={{ color: 'hsl(20 6% 50%)' }}>请选择您的账号以进入系统</p>
+          <h2 className="text-xl font-bold" style={{ color: 'hsl(210 20% 16%)' }}>选择身份</h2>
+          <p className="mt-1 text-sm" style={{ color: 'hsl(210 10% 50%)' }}>请选择您的账号以进入系统</p>
         </div>
 
         {accounts.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-lg bg-white py-16">
-            <Users className="mb-3 h-8 w-8" style={{ color: 'hsl(30 8% 80%)' }} />
-            <p className="text-sm font-medium" style={{ color: 'hsl(20 6% 50%)' }}>暂无可用账号</p>
-            <p className="mt-1 text-xs" style={{ color: 'hsl(20 6% 58%)' }}>请联系管理员添加账号</p>
+          <div className="flex flex-col items-center justify-center rounded-xl border border-slate-100 bg-white py-16 ">
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: 'hsl(210 16% 94%)' }}>
+              <Users className="h-6 w-6" style={{ color: 'hsl(210 10% 68%)' }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: 'hsl(210 12% 45%)' }}>暂无可用账号</p>
+            <p className="mt-1.5 text-xs" style={{ color: 'hsl(210 10% 58%)' }}>请联系管理员添加账号</p>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-lg">
-            {accounts.map((acc, idx) => {
+          <div className="flex flex-col gap-3">
+            {accounts.map((acc) => {
               const serviceName = getServiceName(acc)
               const distributorName = getDistributorName(acc)
               return (
                 <button
                   key={acc.id}
                   onClick={() => onLogin(acc)}
-                  className="row-item flex w-full items-center gap-4 px-5 py-4 text-left"
-                  style={idx === 0 ? { borderTop: 'none' } : {}}
+                  className="flex w-full items-center gap-4 rounded-xl border border-slate-100 bg-white px-5 py-4 text-left  transition-all hover:border-slate-200 hover:bg-slate-50/60"
                 >
-                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-md" style={{ background: 'hsl(30 10% 94%)' }}>
-                    <Users className="h-4.5 w-4.5" style={{ color: 'hsl(20 8% 42%)' }} />
+                  <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: 'hsl(168 40% 94%)' }}>
+                    <Users className="h-4.5 w-4.5" style={{ color: 'hsl(168 50% 32%)' }} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-display text-base text-foreground">{acc.name}</h3>
-                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs" style={{ color: 'hsl(20 6% 52%)' }}>
+                    <h3 className="text-base font-semibold" style={{ color: 'hsl(210 20% 16%)' }}>{acc.name}</h3>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs" style={{ color: 'hsl(210 10% 52%)' }}>
                       <span className="inline-flex items-center gap-1">
                         <Phone className="h-3 w-3" />
                         {acc.phone}
@@ -134,26 +138,26 @@ function AccountSelectionScreen({ role, title, description, gradient, icon: Icon
                         </span>
                       )}
                       {serviceName && (
-                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium" style={{ background: 'hsl(270 40% 95%)', color: 'hsl(270 40% 42%)' }}>
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: 'hsl(200 55% 94%)', color: 'hsl(200 55% 36%)' }}>
                           <Building2 className="h-3 w-3" />
                           {serviceName}
                         </span>
                       )}
                       {distributorName && (
-                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium" style={{ background: 'hsl(35 40% 94%)', color: 'hsl(35 40% 40%)' }}>
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: 'hsl(168 40% 93%)', color: 'hsl(168 50% 30%)' }}>
                           <Truck className="h-3 w-3" />
                           {distributorName}
                         </span>
                       )}
                       {(acc as any).region && role !== 'customer' && (
-                        <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-medium" style={{ background: 'hsl(35 40% 94%)', color: 'hsl(35 40% 40%)' }}>
+                        <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold" style={{ background: 'hsl(220 40% 94%)', color: 'hsl(220 40% 40%)' }}>
                           <MapPin className="h-3 w-3" />
                           {(acc as any).region}
                         </span>
                       )}
                     </div>
                   </div>
-                  <ChevronRight className="h-4 w-4 flex-shrink-0" style={{ color: 'hsl(30 8% 75%)' }} />
+                  <ChevronRight className="h-4 w-4 flex-shrink-0" style={{ color: 'hsl(210 12% 72%)' }} />
                 </button>
               )
             })}

@@ -9,7 +9,7 @@ import { Profile } from './customer/Profile'
 
 export default function CustomerPortal() {
   return (
-    <LoginGate role="customer" title="老人端 - 选择身份" description="请选择您的账号以进入系统" gradient="from-orange-500 via-amber-500 to-orange-600" icon={User}>
+    <LoginGate role="customer" title="老人端 - 选择身份" description="请选择您的账号以进入系统" gradient="from-teal-500 via-cyan-500 to-teal-600" icon={User}>
       <Routes>
         <Route path="/" element={<CustomerHome />} />
         <Route path="/menu" element={<MenuBrowser />} />
