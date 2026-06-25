@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ArrowLeft, CheckCircle, X, Package, User } from 'lucide-react'
 import { storage, mockMeals, Order, OrderItem } from '../../store'
 import WeekMenuTable from '../../components/WeekMenuTable'
+import { toast, confirmDialog } from '../../components/Toast'
 
 
 export function MenuBrowser() {
@@ -90,7 +91,7 @@ export function MenuBrowser() {
     }))
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (cart.length === 0) return
 
@@ -139,17 +140,18 @@ export function MenuBrowser() {
       (o.status === 'pending' || o.status === 'approved') &&
       o.createdAt.startsWith(today)
     )
-    if (duplicate && !window.confirm(`您今天已有一个已提交订单 (${duplicate.id})。确定再提交一个吗？`)) return
+    if (duplicate && !await confirmDialog('重复订单', `您今天已有一个已提交订单 (${duplicate.id})。确定再提交一个吗？`)) return
 
     // 检查费用限额
     const budgetCheck = storage.checkBudget(contactForm.customerPhone, getCartTotal())
     if (!budgetCheck.allowed) {
-      alert(`订单金额超出消费限额\n\n${budgetCheck.message}\n\n请联系管理员调整限额设置。`)
+      toast.error('订单金额超出消费限额', budgetCheck.message)
       return
     }
 
     storage.saveOrder(order)
     setSubmitted(true)
+    toast.success('订单已提交')
   }
 
   if (submitted) {

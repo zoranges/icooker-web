@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect } from 'react'
 import { Link, ArrowLeft, Lock, Eye, EyeOff, Users, Building2, Truck, Factory, Settings, BarChart3, ShoppingBag, DollarSign, Plus, Edit, Trash2, X, Search, ChevronRight } from 'lucide-react'
-import { storage, Order, CustomerAccount, ServiceAccount, DistributorAccount, FactoryAccount, SpendingLimit } from '../store'
+import { storage, Order, CustomerAccount, ServiceAccount, DistributorAccount, FactoryAccount } from '../store'
+import { confirmDialog } from '../components/Toast'
 
-type Tab = 'dashboard' | 'customers' | 'services' | 'distributors' | 'factories' | 'orders' | 'limits'
+type Tab = 'dashboard' | 'customers' | 'services' | 'distributors' | 'factories' | 'orders'
 
 const ADMIN_PIN = import.meta.env.VITE_ADMIN_PIN || 'admin123'
 
@@ -84,7 +85,6 @@ function AdminDashboard({ activeTab, setActiveTab }: { activeTab: Tab; setActive
     { id: 'distributors', label: '分销商', icon: Truck, count: distributors.length },
     { id: 'factories', label: '工厂', icon: Factory, count: factories.length },
     { id: 'orders', label: '全局订单', icon: ShoppingBag, count: orders.length },
-    { id: 'limits', label: '费用限额', icon: DollarSign },
   ]
 
   return (
@@ -140,7 +140,6 @@ function AdminDashboard({ activeTab, setActiveTab }: { activeTab: Tab; setActive
         {activeTab === 'distributors' && <AccountTab role="distributor" accounts={distributors} onRefresh={refresh} />}
         {activeTab === 'factories' && <AccountTab role="factory" accounts={factories} onRefresh={refresh} />}
         {activeTab === 'orders' && <OrdersTab orders={orders} />}
-        {activeTab === 'limits' && <LimitsTab customers={customers} />}
       </main>
     </div>
   )
@@ -287,6 +286,8 @@ function AccountTab({ role, accounts, onRefresh }: { role: string; accounts: Acc
         { key: 'name', label: '名称', type: 'text', required: true },
         { key: 'phone', label: '电话', type: 'text', required: true },
         { key: 'region', label: '区域', type: 'text', required: false },
+        { key: 'address', label: '地址', type: 'text', required: false },
+        { key: 'contactPerson', label: '对接人', type: 'text', required: false },
       ]
       case 'factory': return [
         { key: 'name', label: '名称', type: 'text', required: true },
@@ -310,7 +311,7 @@ function AccountTab({ role, accounts, onRefresh }: { role: string; accounts: Acc
     setShowForm(false); setEditingId(null); onRefresh()
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     let confirmMsg = '确定删除此账号？'
     if (role === 'customer') {
       const orderCount = storage.getOrdersByCustomerPhone(accounts.find(a => a.id === id)?.phone || '').length
@@ -325,7 +326,7 @@ function AccountTab({ role, accounts, onRefresh }: { role: string; accounts: Acc
       const count = storage.getFactoryOrders().filter(fo => fo.factoryId === id).length
       if (count > 0) confirmMsg = `有 ${count} 个工厂订单关联到此工厂。删除后将标记为"已删除的工厂"。确定继续？`
     }
-    if (!window.confirm(confirmMsg)) return
+    if (!await confirmDialog('删除账号', confirmMsg)) return
     if (role === 'customer') {
       const phone = accounts.find(a => a.id === id)?.phone
       if (phone) storage.deleteOrdersByCustomerPhone(phone)
@@ -417,7 +418,7 @@ function AccountTab({ role, accounts, onRefresh }: { role: string; accounts: Acc
 
       {showForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 p-4 backdrop-blur-sm">
-          <div className="animate-scale-in w-full max-w-md rounded-xl border border-slate-100 shadow-xl bg-white px-6 py-5">
+          <div className="animate-scale-in w-full max-w-md rounded-xl border border-slate-100 shadow-xl bg-white px-6 py-5" style={{ maxHeight: '85vh', overflowY: 'auto' }}>
             <div className="mb-4 flex items-center justify-between">
               <h3 className="font-bold text-lg font-bold text-foreground">{editingId ? '编辑' : '添加'}{roleLabels[role]}</h3>
               <button onClick={() => { setShowForm(false); setEditingId(null) }} className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground">
@@ -558,173 +559,6 @@ function OrdersTab({ orders }: { orders: Order[] }) {
               )}
             </div>
           ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function LimitsTab({ customers }: { customers: CustomerAccount[] }) {
-  const [limits, setLimits] = useState<SpendingLimit[]>(() => storage.getSpendingLimits())
-  const [editingPhone, setEditingPhone] = useState<string | null>(null)
-  const [draftDaily, setDraftDaily] = useState(0)
-  const [draftWeekly, setDraftWeekly] = useState(0)
-  const [draftMonthly, setDraftMonthly] = useState(0)
-  const [saved, setSaved] = useState<string | null>(null)
-
-  const getLimit = (phone: string) => limits.find(l => l.customerPhone === phone)
-
-  const startEdit = (customer: CustomerAccount) => {
-    const l = getLimit(customer.phone)
-    setEditingPhone(customer.phone)
-    setDraftDaily(l?.dailyLimit ?? 0)
-    setDraftWeekly(l?.weeklyLimit ?? 0)
-    setDraftMonthly(l?.monthlyLimit ?? 0)
-  }
-
-  const handleSave = (customer: CustomerAccount) => {
-    storage.setSpendingLimit(customer.id, customer.phone, draftDaily, draftWeekly, draftMonthly)
-    setLimits(storage.getSpendingLimits())
-    setEditingPhone(null)
-    setSaved(customer.phone)
-    setTimeout(() => setSaved(null), 2000)
-  }
-
-  const handleClear = (phone: string) => {
-    if (!window.confirm('确定清除此客户的费用限额？清除后该客户将不再受消费限制。')) return
-    const updated = limits.filter(l => l.customerPhone !== phone)
-    storage.saveSpendingLimits(updated)
-    setLimits(updated)
-  }
-
-  return (
-    <div className="animate-fade-in">
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-lg font-bold text-foreground">费用限额管理</h2>
-          <p className="mt-1 text-sm text-muted-foreground">为每位老人设置每日、每周、每月的消费上限，超出限额的订单将被拦截</p>
-        </div>
-      </div>
-
-      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b bg-slate-50/80 border-slate-100 text-left">
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">老人</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每日限额</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每周限额</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每月限额</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">今日消费</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">本周消费</th>
-                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">本月消费</th>
-                <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">操作</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {customers.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-muted-foreground">暂无老人账号</td></tr>
-              ) : (
-                customers.map(c => {
-                  const l = getLimit(c.phone)
-                  const isEditing = editingPhone === c.phone
-                  const dailySpent = storage.getSpentInPeriod(c.phone, 'daily')
-                  const weeklySpent = storage.getSpentInPeriod(c.phone, 'weekly')
-                  const monthlySpent = storage.getSpentInPeriod(c.phone, 'monthly')
-                  const hasLimit = l && (l.dailyLimit > 0 || l.weeklyLimit > 0 || l.monthlyLimit > 0)
-
-                  return (
-                    <tr key={c.id} className="transition-colors hover:bg-slate-50/60">
-                      <td className="px-5 py-3">
-                        <div>
-                          <p className="font-semibold text-foreground">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">{c.phone}</p>
-                        </div>
-                      </td>
-                      {isEditing ? (
-                        <>
-                          <td className="px-5 py-3">
-                            <input type="number" min={0} value={draftDaily} onChange={e => setDraftDaily(Math.max(0, parseInt(e.target.value) || 0))}
-                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
-                          </td>
-                          <td className="px-5 py-3">
-                            <input type="number" min={0} value={draftWeekly} onChange={e => setDraftWeekly(Math.max(0, parseInt(e.target.value) || 0))}
-                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
-                          </td>
-                          <td className="px-5 py-3">
-                            <input type="number" min={0} value={draftMonthly} onChange={e => setDraftMonthly(Math.max(0, parseInt(e.target.value) || 0))}
-                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
-                          </td>
-                        </>
-                      ) : (
-                        <>
-                          <td className="px-5 py-3 text-foreground">{l?.dailyLimit ? `¥${l.dailyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
-                          <td className="px-5 py-3 text-foreground">{l?.weeklyLimit ? `¥${l.weeklyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
-                          <td className="px-5 py-3 text-foreground">{l?.monthlyLimit ? `¥${l.monthlyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
-                        </>
-                      )}
-                      <td className="px-5 py-3">
-                        <SpentCell spent={dailySpent} limit={l?.dailyLimit ?? 0} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <SpentCell spent={weeklySpent} limit={l?.weeklyLimit ?? 0} />
-                      </td>
-                      <td className="px-5 py-3">
-                        <SpentCell spent={monthlySpent} limit={l?.monthlyLimit ?? 0} />
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        {isEditing ? (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button onClick={() => handleSave(c)} className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-teal-700">保存</button>
-                            <button onClick={() => setEditingPhone(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-slate-50">取消</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center justify-end gap-1.5">
-                            {saved === c.phone && <span className="text-xs font-medium text-emerald-600">已保存</span>}
-                            <button onClick={() => startEdit(c)} className="rounded p-1.5 text-muted-foreground/60 transition-colors hover:bg-blue-50 hover:text-blue-600">
-                              <Edit className="h-4 w-4" />
-                            </button>
-                            {hasLimit && (
-                              <button onClick={() => handleClear(c.phone)} className="rounded p-1.5 text-muted-foreground/60 transition-colors hover:bg-red-50 hover:text-red-600">
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 px-5 py-4">
-        <p className="text-sm font-medium text-amber-800">限额说明</p>
-        <p className="mt-1 text-xs text-amber-700">
-          设置为 0 表示该周期不限制消费。当老人提交订单金额超过任一生效周期的剩余额度时，系统将阻止订单提交并提示具体超限信息。
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function SpentCell({ spent, limit }: { spent: number; limit: number }) {
-  const isOver = limit > 0 && spent >= limit
-  const pct = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
-  return (
-    <div>
-      <span className={`text-sm font-semibold tabular-nums ${isOver ? 'text-red-600' : 'text-foreground'}`}>
-        ¥{spent.toFixed(0)}
-      </span>
-      {limit > 0 && (
-        <div className="mt-1 flex items-center gap-1.5">
-          <div className="h-1 w-12 rounded-full bg-muted overflow-hidden">
-            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: isOver ? '#ef4444' : pct > 70 ? '#f59e0b' : '#10b981' }} />
-          </div>
-          <span className="text-[10px] text-muted-foreground">{pct}%</span>
         </div>
       )}
     </div>

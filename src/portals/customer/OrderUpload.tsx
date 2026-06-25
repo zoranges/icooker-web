@@ -1,11 +1,12 @@
 import React, { useState, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Upload, X, Loader2, CheckCircle, Volume2, VolumeX, Settings, Package, User } from 'lucide-react'
-import { storage, Order, OrderItem } from '../../store'
+import { ArrowLeft, Upload, X, Loader2, CheckCircle, Volume2, VolumeX, Settings, Package, User, Calendar } from 'lucide-react'
+import { storage, Order, OrderItem, mockMeals } from '../../store'
 import { speakMealInfo, stopSpeaking, unlockAudio } from '../../utils/speech'
 import OCRResultTable from '../../components/OCRResultTable'
 import { parseOCRMenuTable, ExtractedMeal } from '../../utils/parseOCRMenu'
 import TtsSettingsModal from '../../components/TtsSettingsModal'
+import { toast, confirmDialog } from '../../components/Toast'
 
 export function OrderUpload() {
   const navigate = useNavigate()
@@ -14,6 +15,7 @@ export function OrderUpload() {
     customerName: '',
     customerPhone: '',
     customerAddress: '',
+    deliveryDate: '',
     selectedMeals: [] as { mealId: string; quantity: number; days: string[] }[]
   })
   const [submitted, setSubmitted] = useState(false)
@@ -316,23 +318,28 @@ export function OrderUpload() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     // 检查是否有识别到的餐品
     if (extractedMeals.length === 0) {
-      alert('请先上传菜单进行OCR识别，或手动添加餐品')
+      toast.warning('请先上传菜单', '请进行OCR识别或手动添加餐品')
       return
     }
 
     // 保存客户信息到本地存储
     saveCustomerInfo()
 
+    // 构建价格映射表：从标准菜单和自定义菜品中获取实际价格
+    const customMeals = storage.getCustomMeals()
+    const allMeals = [...mockMeals, ...customMeals]
+    const priceMap = new Map(allMeals.map(m => [m.name, m.price]))
+
     // 将识别到的餐品转换为订单项
     const items: OrderItem[] = extractedMeals.map(meal => ({
       mealName: meal.name,
       quantity: meal.quantity,
-      unitPrice: 25, // 默认单价
+      unitPrice: priceMap.get(meal.name) ?? 25,
       days: [meal.day],
       tags: meal.tags,
       subCategory: meal.subCategory
@@ -360,6 +367,7 @@ export function OrderUpload() {
       totalAmount,
       status: 'pending',
       createdAt: new Date().toISOString(),
+      deliveryDate: formData.deliveryDate || undefined,
       serviceId,
       serviceName,
     }
@@ -371,16 +379,52 @@ export function OrderUpload() {
       (o.status === 'pending' || o.status === 'approved') &&
       o.createdAt.startsWith(today)
     )
-    if (duplicate && !window.confirm(`您今天已有一个已提交订单 (${duplicate.id})。确定再提交一个吗？`)) return
+    if (duplicate) {
+      const proceed = await confirmDialog('重复订单', `您今天已有一个已提交订单 (${duplicate.id})。确定再提交一个吗？`)
+      if (!proceed) return
+    }
+
+    // 检查可用库存是否充足（扣除已预占库存）
+    const outOfStockItems: string[] = []
+    extractedMeals.forEach(meal => {
+      const available = storage.getAvailableStock(meal.name)
+      if (available < meal.quantity) {
+        outOfStockItems.push(`${meal.name} (需要${meal.quantity}份，可用${available}份)`)
+      }
+    })
+    if (outOfStockItems.length > 0) {
+      // 查找该客户的分销商联系电话
+      const custAccounts2 = storage.getAccounts<{phone:string;distributorId:string}>('customer')
+      const cust2 = custAccounts2.find(c => c.phone === formData.customerPhone)
+      let distributorPhone = ''
+      if (cust2?.distributorId) {
+        const distAccounts = storage.getAccounts<{id:string;phone:string}>('distributor')
+        const dist = distAccounts.find(d => d.id === cust2.distributorId)
+        if (dist) distributorPhone = dist.phone
+      }
+      const contactMsg = distributorPhone
+        ? `请联系您的分销商：${distributorPhone}`
+        : '请联系您的分销商处理'
+      toast.error('库存不足，无法提交订单', `${outOfStockItems.join('\n')}\n\n${contactMsg}`)
+      return
+    }
 
     // 检查费用限额
     const budgetCheck = storage.checkBudget(formData.customerPhone, totalAmount)
     if (!budgetCheck.allowed) {
-      alert(`订单金额超出消费限额\n\n${budgetCheck.message}\n\n请联系管理员调整限额设置。`)
+      toast.error('订单金额超出消费限额', budgetCheck.message || '请联系管理员调整限额设置。')
       return
     }
 
+    // 保存订单
     storage.saveOrder(order)
+
+    // 预占库存（分销商接单时确认扣减）
+    items.forEach(item => {
+      storage.reserveStock(item.mealName, item.quantity)
+    })
+
+    toast.success('订单提交成功', '分销商将尽快处理您的订单')
     setSubmitted(true)
   }
 
@@ -875,6 +919,21 @@ export function OrderUpload() {
                     rows={3}
                     placeholder="请输入详细配送地址"
                   />
+                </div>
+                <div>
+                  <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                    <Calendar className="h-3.5 w-3.5 text-teal-600" />
+                    期望配送日期 *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={formData.deliveryDate}
+                    min={new Date(Date.now() + 86400000).toISOString().slice(0, 10)}
+                    onChange={e => setFormData({ ...formData, deliveryDate: e.target.value })}
+                    className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 transition focus:outline-none focus:ring-2 focus:ring-teal-500/20"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-400">配送非即时服务，最早可选择明天</p>
                 </div>
 
                 <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">

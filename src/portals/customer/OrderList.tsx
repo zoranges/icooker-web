@@ -5,6 +5,7 @@ import { ArrowLeft, Package } from 'lucide-react'
 import { storage } from '../../store'
 import { useCurrentUser } from '../../components/LoginGate'
 import OrderInvoice from '../../components/OrderInvoice'
+import { toast, confirmDialog } from '../../components/Toast'
 
 export function OrderList() {
   const navigate = useNavigate()
@@ -19,10 +20,18 @@ export function OrderList() {
     return unsubscribe
   }, [])
 
-  const handleCancel = (orderId: string) => {
-    if (!window.confirm('确定要取消此订单吗？取消后无法恢复。')) return
+  const handleCancel = async (orderId: string) => {
+    if (!await confirmDialog('取消订单', '确定要取消此订单吗？取消后无法恢复。')) return
+    const order = orders.find(o => o.id === orderId)
     storage.updateOrder(orderId, { status: 'cancelled', cancelledAt: new Date().toISOString() })
+    // 取消订单时释放预占库存
+    if (order && order.status === 'pending') {
+      order.items.forEach(item => {
+        storage.releaseReservedStock(item.mealName, item.quantity)
+      })
+    }
     setOrders(filterOrders())
+    toast.success('订单已取消')
   }
 
   return (

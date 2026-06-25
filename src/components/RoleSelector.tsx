@@ -1,8 +1,9 @@
 import { useNavigate } from 'react-router-dom'
-import { Users, Truck, Factory, Settings, ArrowUpRight } from 'lucide-react'
+import { Users, Truck, Factory, Settings, ArrowUpRight, Building2 } from 'lucide-react'
 
 const R = {
   customer:  { name: '老人端',   desc: '在线选菜或拍照上传，轻松订餐',     icon: Users,        accent: '#3b82f6', path: '/customer' },
+  service:   { name: '服务机构端', desc: '管理老人补助、设定消费额度上限', icon: Building2,    accent: '#8b5cf6', path: '/service' },
   distributor:{ name: '分销端',  desc: '汇总订单、向工厂下单、配送调度',     icon: Truck,        accent: '#f59e0b', path: '/distributor' },
   factory:   { name: '工厂端',   desc: '菜品管理、生产排单、订单处理',       icon: Factory,      accent: '#10b981', path: '/factory' },
   admin:     { name: '管理端',   desc: '账号管理、全局订单监控、数据统计',   icon: Settings,     accent: '#f43f5e', path: '/admin' },
@@ -10,6 +11,7 @@ const R = {
 
 const flowSteps = [
   { label: '老人下单', icon: Users, accent: '#3b82f6' },
+  { label: '服务机构审核', icon: Building2, accent: '#8b5cf6' },
   { label: '分销汇总', icon: Truck, accent: '#f59e0b' },
   { label: '工厂生产', icon: Factory, accent: '#10b981' },
   { label: '配送到家', icon: Truck, accent: '#06b6d4' },
@@ -46,7 +48,7 @@ export default function RoleSelector() {
 
           {/* subtitle */}
           <p className="mt-4 max-w-2xl text-lg leading-relaxed text-white/80 sm:text-xl">
-            连接老人、分销商与工厂的一站式智能协同平台
+            连接老人、服务机构、分销商与工厂的一站式智能协同平台
           </p>
 
           {/* ── Quick-nav chips ── */}
@@ -78,7 +80,7 @@ export default function RoleSelector() {
         </div>
 
         {/* ── Role cards grid ── */}
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {Object.entries(R).map(([id, r]) => (
             <button
               key={id}
@@ -119,7 +121,7 @@ export default function RoleSelector() {
           <div className="rounded-xl border border-slate-100 bg-white p-8  sm:p-10">
             <div className="relative flex items-start justify-between">
               {/* connecting line (desktop) */}
-              <div className="absolute left-[calc(12.5%+20px)] right-[calc(12.5%+20px)] top-5 hidden h-px bg-slate-200 sm:block" />
+              <div className="absolute left-[calc(10%+20px)] right-[calc(10%+20px)] top-5 hidden h-px bg-slate-200 sm:block" />
 
               {/* connecting line (mobile — vertical) */}
               <div className="absolute left-5 top-10 bottom-5 block w-px bg-slate-200 sm:hidden" />

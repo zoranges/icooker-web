@@ -8,6 +8,7 @@ export interface Order {
   totalAmount: number
   status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'processing' | 'completed' | 'delivered'
   createdAt: string
+  deliveryDate?: string
   approvedAt?: string
   cancelledAt?: string
   rejectedAt?: string
@@ -50,6 +51,7 @@ export interface FactoryOrder {
   totalAmount: number
   status: 'pending' | 'confirmed' | 'completed' | 'delivered'
   createdAt: string
+  deliveryDate: string
   // 溯源信息
   distributorName?: string
   distributorId?: string
@@ -61,6 +63,7 @@ export interface FactoryOrder {
 export interface InventoryItem {
   mealName: string
   stock: number
+  reservedStock?: number
   updatedAt: string
 }
 
@@ -113,6 +116,8 @@ export interface DistributorAccount {
   name: string
   phone: string
   region: string
+  address: string
+  contactPerson: string
   createdAt: string
 }
 
@@ -454,8 +459,8 @@ export const storage = {
     }
     if (storage.getAccounts('distributor').length === 0) {
       storage.saveAccounts('distributor', [
-        { id: 'dist-1', name: '东城配送中心', phone: '010-88880002', region: '东城区', createdAt: now },
-        { id: 'dist-2', name: '朝阳配送中心', phone: '010-88880005', region: '朝阳区', createdAt: now },
+        { id: 'dist-1', name: '东城配送中心', phone: '010-88880002', region: '东城区', address: '北京市东城区东直门内大街12号', contactPerson: '刘强', createdAt: now },
+        { id: 'dist-2', name: '朝阳配送中心', phone: '010-88880005', region: '朝阳区', address: '北京市朝阳区望京西路50号', contactPerson: '陈静', createdAt: now },
       ])
     }
     if (storage.getAccounts('factory').length === 0) {
@@ -486,6 +491,47 @@ export const storage = {
       inventory.push({ mealName, stock: Math.max(0, delta), updatedAt: new Date().toISOString() })
     }
     storage.saveInventory(inventory)
+  },
+
+  reserveStock: (mealName: string, quantity: number) => {
+    const inventory = storage.getInventory()
+    const idx = inventory.findIndex(i => i.mealName === mealName)
+    if (idx !== -1) {
+      inventory[idx].reservedStock = (inventory[idx].reservedStock || 0) + quantity
+      inventory[idx].updatedAt = new Date().toISOString()
+    } else {
+      inventory.push({ mealName, stock: 0, reservedStock: quantity, updatedAt: new Date().toISOString() })
+    }
+    storage.saveInventory(inventory)
+  },
+
+  confirmReservedStock: (mealName: string, quantity: number) => {
+    const inventory = storage.getInventory()
+    const idx = inventory.findIndex(i => i.mealName === mealName)
+    if (idx !== -1) {
+      inventory[idx].reservedStock = Math.max(0, (inventory[idx].reservedStock || 0) - quantity)
+      inventory[idx].stock = Math.max(0, inventory[idx].stock - quantity)
+      inventory[idx].updatedAt = new Date().toISOString()
+      storage.saveInventory(inventory)
+    }
+    notifyOrderChange()
+  },
+
+  releaseReservedStock: (mealName: string, quantity: number) => {
+    const inventory = storage.getInventory()
+    const idx = inventory.findIndex(i => i.mealName === mealName)
+    if (idx !== -1) {
+      inventory[idx].reservedStock = Math.max(0, (inventory[idx].reservedStock || 0) - quantity)
+      inventory[idx].updatedAt = new Date().toISOString()
+      storage.saveInventory(inventory)
+    }
+  },
+
+  getAvailableStock: (mealName: string): number => {
+    const inventory = storage.getInventory()
+    const item = inventory.find(i => i.mealName === mealName)
+    if (!item) return 0
+    return item.stock - (item.reservedStock || 0)
   },
 
   // ── 费用限额管理（由管理端统一控制）──

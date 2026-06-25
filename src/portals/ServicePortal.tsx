@@ -1,14 +1,14 @@
-import { useState, useMemo, useEffect } from 'react'
-import { Link, ArrowLeft, Users, TrendingUp, DollarSign, ShoppingBag, ChevronRight, Search, Filter, Calendar, Clock, CheckCircle, XCircle, ShieldCheck, BarChart3, FileText, User, Truck } from 'lucide-react'
-import { storage, Order } from '../store'
+import { useState, useEffect, useMemo } from 'react'
+import { Building2, Users, ShoppingBag, DollarSign, Edit, Trash2 } from 'lucide-react'
+import { storage, Order, CustomerAccount, SpendingLimit } from '../store'
 import LoginGate, { useCurrentUser } from '../components/LoginGate'
+import { confirmDialog } from '../components/Toast'
 
-type Tab = 'dashboard' | 'customers' | 'cost' | 'review'
-type Period = 'thisWeek' | 'thisMonth' | 'last3Months' | 'all'
+type Tab = 'dashboard' | 'customers' | 'limits' | 'orders'
 
 export default function ServicePortal() {
   return (
-    <LoginGate role="service" title="服务机构 - 选择身份" gradient="from-violet-600 via-purple-600 to-violet-500" icon={ShieldCheck}>
+    <LoginGate role="service" title="服务机构端 - 选择身份" gradient="from-violet-600 via-purple-600 to-violet-500" icon={Building2}>
       <ServicePortalContent />
     </LoginGate>
   )
@@ -16,203 +16,93 @@ export default function ServicePortal() {
 
 function ServicePortalContent() {
   const { currentUser } = useCurrentUser()
-  const [orders, setOrders] = useState<Order[]>(() => storage.getOrders())
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
-  const [period, setPeriod] = useState<Period>('all')
-  const [selectedCustomer, setSelectedCustomer] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-
-  const refreshOrders = () => setOrders(storage.getOrders())
+  const [orders, setOrders] = useState<Order[]>([])
+  const [customers, setCustomers] = useState<CustomerAccount[]>([])
 
   useEffect(() => {
-    return storage.subscribeToOrderChanges(() => setOrders(storage.getOrders()))
+    setOrders(storage.getOrders())
+    setCustomers(storage.getAccounts<CustomerAccount>('customer'))
+    const unsub = storage.subscribeToOrderChanges(() => setOrders(storage.getOrders()))
+    return () => { unsub() }
   }, [])
 
-  const now = new Date()
+  const myCustomers = useMemo(
+    () => customers.filter(c => c.serviceId === currentUser?.id),
+    [customers, currentUser]
+  )
 
-  const periodFilter = (order: Order): boolean => {
-    const d = new Date(order.createdAt)
-    switch (period) {
-      case 'thisWeek': {
-        const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay()); startOfWeek.setHours(0,0,0,0)
-        return d >= startOfWeek
-      }
-      case 'thisMonth': {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
-        return d >= startOfMonth
-      }
-      case 'last3Months': {
-        const threeMonthsAgo = new Date(now); threeMonthsAgo.setMonth(now.getMonth() - 3)
-        return d >= threeMonthsAgo
-      }
-      default: return true
-    }
-  }
+  const myCustomerPhones = useMemo(
+    () => new Set(myCustomers.map(c => c.phone)),
+    [myCustomers]
+  )
 
-  const myCustomerPhones = useMemo(() => {
-    const accounts = storage.getAccounts<{phone:string;serviceId:string}>('customer')
-    return new Set(accounts.filter(a => a.serviceId === currentUser?.id).map(a => a.phone))
-  }, [currentUser])
+  const myOrders = useMemo(
+    () => orders.filter(o => myCustomerPhones.has(o.customerPhone)),
+    [orders, myCustomerPhones]
+  )
 
-  const allCustomers = useMemo(() => {
-    const map = new Map<string, { name: string; phone: string; address: string; orders: Order[] }>()
-    const accounts = storage.getAccounts<{ name: string; phone: string; address: string; serviceId: string }>('customer')
-    accounts.forEach(a => {
-      if (a.serviceId !== currentUser?.id) return
-      const key = a.phone || a.name
-      if (!map.has(key)) {
-        map.set(key, { name: a.name, phone: a.phone, address: a.address || '', orders: [] })
-      }
-    })
-    orders.forEach(o => {
-      if (!myCustomerPhones.has(o.customerPhone)) return
-      const key = o.customerPhone || o.customerName
-      const existing = map.get(key)
-      if (existing) {
-        existing.orders.push(o)
-      } else {
-        map.set(key, { name: o.customerName, phone: o.customerPhone, address: o.customerAddress, orders: [o] })
-      }
-    })
-    return Array.from(map.values()).sort((a, b) => b.orders.length - a.orders.length)
-  }, [orders, myCustomerPhones, currentUser])
+  const todayOrders = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return myOrders.filter(o => new Date(o.createdAt) >= today)
+  }, [myOrders])
 
-  const filteredOrders = useMemo(() => orders.filter(o => myCustomerPhones.has(o.customerPhone) && periodFilter(o)), [orders, period, myCustomerPhones])
-  const myOrders = useMemo(() => orders.filter(o => myCustomerPhones.has(o.customerPhone)), [orders, myCustomerPhones])
-  const pendingOrders = myOrders.filter(o => o.status === 'pending')
-  const approvedOrders = myOrders.filter(o => o.status === 'approved')
-  const processingOrders = myOrders.filter(o => o.status === 'processing')
-  const completedOrders = myOrders.filter(o => o.status === 'completed')
-  const deliveredOrders = myOrders.filter(o => o.status === 'delivered')
-  const rejectedOrders = myOrders.filter(o => o.status === 'rejected')
+  const monthlySpending = useMemo(() => {
+    return myCustomers.reduce((sum, c) => sum + storage.getSpentInPeriod(c.phone, 'monthly'), 0)
+  }, [myCustomers, orders])
 
-  const stats = useMemo(() => {
-    const filtered = filteredOrders
-    const totalRevenue = filtered.reduce((s, o) => s + o.totalAmount, 0)
-    const totalItems = filtered.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.quantity, 0), 0)
-    return {
-      totalCustomers: allCustomers.length,
-      totalOrders: filtered.length,
-      totalRevenue,
-      totalItems,
-      avgOrderValue: filtered.length ? Math.round(totalRevenue / filtered.length) : 0,
-      avgPerCustomer: allCustomers.length ? Math.round(totalRevenue / allCustomers.length) : 0,
-    }
-  }, [filteredOrders, allCustomers])
+  const limits = useMemo(() => storage.getSpendingLimits(), [orders])
+  const coveredCount = myCustomers.filter(c => {
+    const l = limits.find(l => l.customerPhone === c.phone)
+    return l && (l.dailyLimit > 0 || l.weeklyLimit > 0 || l.monthlyLimit > 0)
+  }).length
 
-  const customerSpending = useMemo(() => {
-    return allCustomers.map(c => ({
-      name: c.name,
-      phone: c.phone,
-      address: c.address,
-      orderCount: c.orders.filter(periodFilter).length,
-      totalSpent: c.orders.filter(periodFilter).reduce((s, o) => s + o.totalAmount, 0),
-      avgPerOrder: 0,
-      allOrders: c.orders,
-    })).filter(c => c.orderCount > 0).sort((a, b) => b.totalSpent - a.totalSpent).map(c => ({
-      ...c,
-      avgPerOrder: c.orderCount ? Math.round(c.totalSpent / c.orderCount) : 0,
-    }))
-  }, [allCustomers, period, orders])
-
-  const weeklyTrend = useMemo(() => {
-    const weeks: Record<string, { revenue: number; orders: number }> = {}
-    orders.forEach(o => {
-      const d = new Date(o.createdAt)
-      const weekStart = new Date(d); weekStart.setDate(d.getDate() - d.getDay()); weekStart.setHours(0,0,0,0)
-      const key = weekStart.toISOString().split('T')[0]
-      if (!weeks[key]) weeks[key] = { revenue: 0, orders: 0 }
-      weeks[key].revenue += o.totalAmount
-      weeks[key].orders += 1
-    })
-    return Object.entries(weeks).sort(([a], [b]) => a.localeCompare(b)).slice(-8)
-  }, [orders])
-
-  const maxWeekRevenue = Math.max(...weeklyTrend.map(([, v]) => v.revenue), 1)
-
-  const categorySpending = useMemo(() => {
-    const cats: Record<string, number> = {}
-    filteredOrders.forEach(o => {
-      o.items.forEach(item => {
-        const cat = (item as any).subCategory || (item as any).category || '未分类'
-        const simple = cat.includes('Regular') ? '常规主餐' : cat.includes('Easy') ? '易咀嚼主餐' : cat.includes('Vegetarian') || cat.includes('素食') ? '素食' : cat.includes('Farmdoor') || cat.includes('Main Meal') ? 'Farmdoor主餐' : cat.includes('Sweet') || cat.includes('甜点') ? '甜点' : cat.includes('Fruit') || cat.includes('Dairy') ? '水果/乳制品' : '其他'
-        cats[simple] = (cats[simple] || 0) + item.quantity
-      })
-    })
-    return Object.entries(cats).sort(([, a], [, b]) => b - a)
-  }, [filteredOrders])
-
-  const maxCatQty = Math.max(...categorySpending.map(([, q]) => q), 1)
-
-  const handleApprove = (orderId: string) => {
-    const order = storage.getOrders().find(o => o.id === orderId)
-    if (!order || !myCustomerPhones.has(order.customerPhone)) { return }
-    storage.updateOrder(orderId, { status: 'approved', approvedAt: new Date().toISOString() })
-    refreshOrders()
-  }
-  const handleReject = (orderId: string) => {
-    const order = storage.getOrders().find(o => o.id === orderId)
-    if (!order || !myCustomerPhones.has(order.customerPhone)) { return }
-    storage.updateOrder(orderId, { status: 'rejected' })
-    refreshOrders()
-  }
-
-  const selectedCustomerData = selectedCustomer
-    ? customerSpending.find(c => c.phone === selectedCustomer) || customerSpending.find(c => c.name === selectedCustomer)
-    : null
-
-  const periodLabel: Record<Period, string> = { thisWeek: '本周', thisMonth: '本月', last3Months: '近3月', all: '全部' }
-
-  const statColors = ['#3b82f6', '#f97316', '#10b981', '#8b5cf6']
+  const tabs: { id: Tab; label: string; icon: React.ElementType; count?: number }[] = [
+    { id: 'dashboard', label: '总览', icon: Building2 },
+    { id: 'customers', label: '管理老人', icon: Users, count: myCustomers.length },
+    { id: 'limits', label: '费用限额', icon: DollarSign },
+    { id: 'orders', label: '订单记录', icon: ShoppingBag, count: myOrders.length },
+  ]
 
   return (
-    <div className="min-h-screen" style={{ background: 'hsl(30 20% 98%)' }}>
-      {/* Header */}
-      <header className="relative overflow-hidden" style={{ background: 'linear-gradient(135deg, #6d28d9, #7c3aed, #8b5cf6)' }}>
+    <div className="min-h-screen" style={{ background: 'hsl(210 20% 98%)' }}>
+      <header className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-purple-600 to-violet-500">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.1),transparent_50%)]" />
         <div className="relative mx-auto max-w-7xl px-6 py-8">
-          <Link to="/" className="mb-4 inline-flex items-center gap-1.5 rounded-md bg-white/10 px-3 py-1.5 text-sm font-medium text-white/85 backdrop-blur transition-colors hover:bg-white/20 hover:text-white">
-            <ArrowLeft className="h-4 w-4" />
-            返回首页
-          </Link>
+          <a href="/" className="mb-4 inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1.5 text-sm font-medium text-white/85 backdrop-blur-md transition-colors hover:bg-white/20 hover:text-white">
+            &larr; 返回首页
+          </a>
           <div className="flex items-center gap-3.5">
-            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-white/12">
-              <ShieldCheck className="h-6 w-6 text-white" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/15">
+              <Building2 className="h-6 w-6 text-white" />
             </div>
             <div>
-              <h1 className="font-display text-2xl font-bold tracking-tight text-white">服务机构端</h1>
-              <p className="mt-0.5 text-sm text-white/80">{currentUser?.name || ''} · 多客户管理 · 费用分析 · 订单审核</p>
+              <h1 className="font-bold text-2xl font-bold tracking-tight text-white">服务机构端</h1>
+              <p className="mt-0.5 text-sm text-white/80">{currentUser?.name} &middot; 老人补助管理 &middot; 消费额度控制</p>
             </div>
           </div>
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur" style={{ boxShadow: '0 1px 0 hsl(30 8% 92%)' }}>
+      <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-slate-100">
         <div className="mx-auto max-w-7xl px-6">
-          <div className="flex gap-0.5 py-1.5">
-            {[
-              { id: 'dashboard' as Tab, label: '总览', icon: BarChart3, badge: null },
-              { id: 'customers' as Tab, label: '客户管理', icon: Users, badge: allCustomers.length },
-              { id: 'cost' as Tab, label: '费用分析', icon: TrendingUp, badge: null },
-              { id: 'review' as Tab, label: '订单审核', icon: FileText, badge: pendingOrders.length || null },
-            ].map(tab => (
+          <div className="flex gap-0.5 overflow-x-auto py-1.5">
+            {tabs.map(tab => (
               <button
                 key={tab.id}
-                onClick={() => { setActiveTab(tab.id); setSelectedCustomer(null) }}
-                className={`flex items-center gap-1.5 rounded px-3.5 py-2 text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? 'bg-primary/12 text-primary'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex flex-shrink-0 items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors ${
+                  activeTab === tab.id ? 'bg-violet-50 text-violet-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
                 }`}
               >
                 <tab.icon className="h-4 w-4" />
                 {tab.label}
-                {tab.badge && (
+                {tab.count !== undefined && (
                   <span className={`rounded-full px-2 py-0.5 text-xs font-bold ${
-                    activeTab === tab.id ? 'bg-primary/20 text-primary' : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {tab.badge}
+                    activeTab === tab.id ? 'bg-violet-100 text-violet-700' : 'text-muted-foreground'
+                  }`} style={activeTab !== tab.id ? { background: 'hsl(210 15% 92%)' } : undefined}>
+                    {tab.count}
                   </span>
                 )}
               </button>
@@ -222,525 +112,356 @@ function ServicePortalContent() {
       </div>
 
       <main className="mx-auto max-w-7xl px-6 py-6">
-        {/* ── DASHBOARD ── */}
         {activeTab === 'dashboard' && (
-          <div className="animate-fade-in space-y-8">
-            {/* Key metrics */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
-              {[
-                { label: '总客户数', value: stats.totalCustomers, icon: Users, colorIdx: 0 },
-                { label: '总订单', value: stats.totalOrders, icon: ShoppingBag, colorIdx: 1 },
-                { label: '总收入', value: `$${stats.totalRevenue}`, icon: DollarSign, colorIdx: 2 },
-                { label: `人均消费 (${periodLabel[period]})`, value: `$${stats.avgPerCustomer}`, icon: TrendingUp, colorIdx: 3 },
-              ].map((m) => (
-                <div key={m.label} className="rounded-lg bg-white px-5 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[28px] font-bold tabular-nums leading-none text-foreground">{m.value}</p>
-                      <p className="mt-1.5 text-xs font-medium text-muted-foreground">{m.label}</p>
-                    </div>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: statColors[m.colorIdx] }}>
-                      <m.icon className="h-5 w-5 text-white" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Charts row */}
-            <div className="space-y-5">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display text-base font-bold text-foreground">数据分析</h3>
-                <div className="flex items-center gap-1 rounded bg-muted p-0.5">
-                  {(['thisWeek', 'thisMonth', 'last3Months', 'all'] as Period[]).map(p => (
-                    <button
-                      key={p}
-                      onClick={() => setPeriod(p)}
-                      className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                        period === p ? 'bg-white text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                      }`}
-                    >
-                      {periodLabel[p]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="grid gap-6 lg:grid-cols-2">
-              {/* Weekly trend */}
-              <div className="rounded-lg bg-white px-5 py-5">
-                <h3 className="font-display mb-0.5 text-sm font-bold text-foreground">周收入趋势</h3>
-                <p className="mb-5 text-xs text-muted-foreground">最近 {weeklyTrend.length} 周</p>
-                {weeklyTrend.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">暂无数据</p>
-                ) : (
-                  <div className="flex items-end gap-2" style={{ height: 140 }}>
-                    {weeklyTrend.map(([week, data]) => {
-                      const h = (data.revenue / maxWeekRevenue) * 120
-                      return (
-                        <div key={week} className="group flex flex-1 flex-col items-center gap-1">
-                          <span className="text-xs font-semibold text-muted-foreground tabular-nums">${data.revenue}</span>
-                          <div
-                            className="w-full rounded-t transition-all"
-                            style={{
-                              height: Math.max(h, 4),
-                              background: 'linear-gradient(to top, hsl(15 55% 40%), hsl(32 35% 45%))',
-                            }}
-                          />
-                          <span className="text-[10px] text-muted-foreground/60">{week.slice(5)}</span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Category breakdown */}
-              <div className="rounded-lg bg-white px-5 py-5">
-                <h3 className="font-display mb-0.5 text-sm font-bold text-foreground">餐品类别分布</h3>
-                <p className="mb-5 text-xs text-muted-foreground">{periodLabel[period]} 各品类点单量</p>
-                {categorySpending.length === 0 ? (
-                  <p className="py-10 text-center text-sm text-muted-foreground">暂无数据</p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {categorySpending.map(([cat, qty]) => (
-                      <div key={cat} className="flex items-center gap-3">
-                        <span className="w-20 flex-shrink-0 text-xs font-medium text-muted-foreground">{cat}</span>
-                        <div className="flex-1 h-4 rounded-full bg-muted overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${(qty / maxCatQty) * 100}%`,
-                              background: 'linear-gradient(to right, hsl(15 55% 40%), hsl(32 35% 45%))',
-                            }}
-                          />
-                        </div>
-                        <span className="w-6 text-right text-xs font-semibold tabular-nums text-muted-foreground">{qty}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-            </div>
-
-            {/* Top customers preview */}
-            {customerSpending.length > 0 && (
-              <div className="rounded-lg bg-white">
-                <div className="flex items-center justify-between px-5 py-3.5">
-                  <h3 className="font-display text-sm font-bold text-foreground">消费排行 TOP {Math.min(5, customerSpending.length)}</h3>
-                  <button onClick={() => setActiveTab('customers')} className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80">
-                    查看全部 <ChevronRight className="h-3 w-3" />
-                  </button>
-                </div>
-                <div>
-                  {customerSpending.slice(0, 5).map((c, idx) => (
-                    <div key={c.phone} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-muted">
-                      <div className="flex items-center gap-3">
-                        <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/12 text-xs font-bold text-primary">{idx + 1}</span>
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{c.name}</p>
-                          <p className="text-xs text-muted-foreground">{c.phone}</p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-bold text-foreground">${c.totalSpent}</p>
-                        <p className="text-xs text-muted-foreground">{c.orderCount} 单</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
+          <DashboardTab
+            myCustomers={myCustomers}
+            todayOrders={todayOrders}
+            monthlySpending={monthlySpending}
+            coveredCount={coveredCount}
+            myOrders={myOrders}
+          />
         )}
-
-        {/* ── CUSTOMER MANAGEMENT ── */}
-        {activeTab === 'customers' && (
-          <div className="animate-fade-in">
-            {selectedCustomerData ? (
-              <div className="space-y-5">
-                <button onClick={() => setSelectedCustomer(null)} className="flex items-center gap-1 text-sm font-medium text-primary hover:text-primary/80">
-                  <ChevronRight className="h-4 w-4 rotate-180" /> 返回客户列表
-                </button>
-
-                <div className="rounded-lg bg-white px-5 py-5">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h2 className="font-display text-lg font-bold text-foreground">{selectedCustomerData.name}</h2>
-                      <p className="mt-0.5 text-sm text-muted-foreground">{selectedCustomerData.phone}</p>
-                      <p className="text-sm text-muted-foreground/60">{selectedCustomerData.address}</p>
-                    </div>
-                    <div className="flex gap-5 text-center">
-                      <div>
-                        <div className="text-xl font-bold text-primary">${selectedCustomerData.totalSpent}</div>
-                        <div className="text-xs text-muted-foreground">总消费</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-foreground">{selectedCustomerData.orderCount}</div>
-                        <div className="text-xs text-muted-foreground">订单数</div>
-                      </div>
-                      <div>
-                        <div className="text-xl font-bold text-foreground">${selectedCustomerData.avgPerOrder}</div>
-                        <div className="text-xs text-muted-foreground">均单金额</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg bg-white">
-                  <div className="px-5 py-3.5">
-                    <h3 className="font-display text-sm font-bold text-foreground">订单历史</h3>
-                  </div>
-                  <div>
-                    {selectedCustomerData.allOrders.filter(periodFilter).length === 0 ? (
-                      <p className="px-5 py-10 text-center text-sm text-muted-foreground">该时间段内无订单</p>
-                    ) : (
-                      selectedCustomerData.allOrders.filter(periodFilter).map(order => (
-                        <div key={order.id} className="px-5 py-3.5 transition-colors hover:bg-muted">
-                          <div className="flex items-center justify-between mb-1.5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-semibold text-foreground">{order.id}</span>
-                              <span className={`badge ${order.status === 'delivered' ? 'bg-emerald-100 text-emerald-700' : order.status === 'approved' ? 'bg-blue-100 text-blue-700' : order.status === 'pending' ? 'bg-amber-100 text-amber-700' : order.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-muted text-muted-foreground'}`}>
-                                {order.status === 'pending' ? '待审核' : order.status === 'approved' ? '已通过' : order.status === 'rejected' ? '已拒绝' : order.status === 'processing' ? '生产中' : order.status === 'completed' ? '配送中' : '已送达'}
-                              </span>
-                            </div>
-                            <span className="text-sm font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${order.totalAmount}</span>
-                          </div>
-                          <div className="flex flex-wrap gap-1 mb-1.5">
-                            {order.items.map((item, idx) => (
-                              <span key={idx} className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                                {item.mealName} x{item.quantity}
-                              </span>
-                            ))}
-                          </div>
-                          {(order.serviceName || order.distributorName || order.factoryName) && (
-                            <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/60">
-                              {order.serviceName && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{order.serviceName}</span>}
-                              {order.serviceName && (order.distributorName || order.factoryName) && <span>&rarr;</span>}
-                              {order.distributorName && <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-600">{order.distributorName}</span>}
-                              {order.distributorName && order.factoryName && <span>&rarr;</span>}
-                              {order.factoryName && <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-600">{order.factoryName}</span>}
-                            </div>
-                          )}
-                          <p className="text-xs text-muted-foreground/60">{new Date(order.createdAt).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })}</p>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="mb-5 flex flex-wrap items-center gap-3">
-                  <div className="relative flex-1 max-w-xs">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full rounded py-2 pl-9 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/12 ring-1 ring-inset"
-                      style={{ '--tw-ring-color': 'hsl(30 8% 88%)' } as React.CSSProperties}
-                      placeholder="搜索客户姓名/电话..."
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Filter className="h-4 w-4 text-muted-foreground/60" />
-                    {(['all', 'thisMonth', 'last3Months'] as Period[]).map(p => (
-                      <button
-                        key={p}
-                        onClick={() => setPeriod(p)}
-                        className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                          period === p ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-muted'
-                        }`}
-                      >
-                        {periodLabel[p]}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {customerSpending.filter(c => {
-                  if (!searchQuery) return true
-                  const q = searchQuery.toLowerCase()
-                  return c.name.toLowerCase().includes(q) || c.phone.includes(q)
-                }).length === 0 ? (
-                  <div className="flex flex-col items-center justify-center rounded-lg bg-white py-20">
-                    <Users className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                    <p className="text-sm font-medium text-muted-foreground">暂无客户数据</p>
-                    <p className="mt-1 text-xs text-muted-foreground/60">老人下单后，客户信息将在此处汇总</p>
-                  </div>
-                ) : (
-                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3 stagger-children">
-                    {customerSpending.filter(c => {
-                      if (!searchQuery) return true
-                      const q = searchQuery.toLowerCase()
-                      return c.name.toLowerCase().includes(q) || c.phone.includes(q)
-                    }).map(c => (
-                      <button
-                        key={c.phone}
-                        onClick={() => setSelectedCustomer(c.phone)}
-                        className="rounded-lg bg-white px-4 py-4 text-left transition-colors hover:ring-1 hover:ring-primary/20"
-                        style={{ borderColor: 'hsl(30 8% 90%)' }}
-                      >
-                        <div className="mb-2.5 flex items-start justify-between">
-                          <div>
-                            <h3 className="font-display text-sm font-bold text-foreground">{c.name}</h3>
-                            <p className="text-xs text-muted-foreground">{c.phone}</p>
-                          </div>
-                          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary/10">
-                            <User className="h-3.5 w-3.5 text-primary" />
-                          </div>
-                        </div>
-                        {c.address && <p className="mb-2.5 truncate text-xs text-muted-foreground/60">{c.address}</p>}
-                        <div className="flex items-center justify-between pt-2.5">
-                          <div className="text-center">
-                            <div className="text-base font-bold text-primary">${c.totalSpent}</div>
-                            <div className="text-[10px] text-muted-foreground">总消费</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-base font-bold text-foreground">{c.orderCount}</div>
-                            <div className="text-[10px] text-muted-foreground">订单</div>
-                          </div>
-                          <div className="text-center">
-                            <div className="text-base font-bold text-foreground">${c.avgPerOrder}</div>
-                            <div className="text-[10px] text-muted-foreground">均单</div>
-                          </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── COST ANALYSIS ── */}
-        {activeTab === 'cost' && (
-          <div className="animate-fade-in space-y-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground/60" />
-                {(['thisWeek', 'thisMonth', 'last3Months', 'all'] as Period[]).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setPeriod(p)}
-                    className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
-                      period === p ? 'bg-primary/12 text-primary' : 'text-muted-foreground hover:bg-muted'
-                    }`}
-                  >
-                    {periodLabel[p]}
-                  </button>
-                ))}
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span>总订单: <strong className="text-foreground">{stats.totalOrders}</strong></span>
-                <span>总收入: <strong className="text-primary">${stats.totalRevenue}</strong></span>
-                <span>人均: <strong className="text-foreground">${stats.avgPerCustomer}</strong></span>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3 stagger-children">
-              {[
-                { label: '总收入', value: `$${stats.totalRevenue}`, sub: `${periodLabel[period]}累计`, icon: DollarSign, colorIdx: 2 },
-                { label: '服务客户', value: customerSpending.length, sub: `${stats.totalOrders} 笔订单`, icon: Users, colorIdx: 0 },
-                { label: '均单金额', value: `$${stats.avgOrderValue}`, sub: `${stats.totalItems} 个餐品`, icon: ShoppingBag, colorIdx: 3 },
-              ].map(m => (
-                <div key={m.label} className="rounded-lg bg-white px-5 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-[28px] font-bold tabular-nums leading-none text-foreground">{m.value}</p>
-                      <p className="mt-1.5 text-xs font-medium text-muted-foreground">{m.label}</p>
-                      <p className="mt-0.5 text-xs text-muted-foreground">{m.sub}</p>
-                    </div>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: statColors[m.colorIdx] }}>
-                      <m.icon className="h-5 w-5 text-white" />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="rounded-lg bg-white overflow-hidden">
-              <div className="px-5 py-3.5">
-                <h3 className="font-display text-sm font-bold text-foreground">客户消费明细</h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">{periodLabel[period]} · 点击客户查看订单详情</p>
-              </div>
-              {customerSpending.length === 0 ? (
-                <p className="px-5 py-14 text-center text-sm text-muted-foreground">该时间段内无消费记录</p>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted text-left" style={{ borderColor: 'hsl(30 8% 90%)' }}>
-                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">客户</th>
-                        <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">电话</th>
-                        <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">订单数</th>
-                        <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">均单金额</th>
-                        <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">总消费</th>
-                        <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">占比</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y" style={{ borderColor: 'hsl(30 8% 90%)' }}>
-                      {customerSpending.map(c => (
-                        <tr
-                          key={c.phone}
-                          onClick={() => { setSelectedCustomer(c.phone); setActiveTab('customers') }}
-                          className="cursor-pointer transition-colors hover:bg-primary/[0.03]"
-                        >
-                          <td className="px-5 py-3"><span className="font-medium text-foreground">{c.name}</span></td>
-                          <td className="px-5 py-3 text-muted-foreground">{c.phone}</td>
-                          <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{c.orderCount}</td>
-                          <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">${c.avgPerOrder}</td>
-                          <td className="px-5 py-3 text-right tabular-nums"><span className="font-semibold text-primary">${c.totalSpent}</span></td>
-                          <td className="px-5 py-3 text-right tabular-nums text-muted-foreground">{stats.totalRevenue ? Math.round((c.totalSpent / stats.totalRevenue) * 100) : 0}%</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2 bg-muted font-semibold" style={{ borderColor: 'hsl(30 8% 90%)' }}>
-                        <td className="px-5 py-3 text-foreground">合计</td>
-                        <td className="px-5 py-3 text-muted-foreground">{customerSpending.length} 人</td>
-                        <td className="px-5 py-3 text-right tabular-nums text-foreground">{stats.totalOrders}</td>
-                        <td className="px-5 py-3 text-right tabular-nums text-foreground">${stats.avgOrderValue}</td>
-                        <td className="px-5 py-3 text-right tabular-nums text-primary">${stats.totalRevenue}</td>
-                        <td className="px-5 py-3 text-right tabular-nums text-foreground">100%</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* ── ORDER REVIEW ── */}
-        {activeTab === 'review' && (
-          <div className="animate-fade-in space-y-8">
-            {pendingOrders.length > 0 && (
-              <section>
-                <div className="mb-3 flex items-center gap-2.5">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-100">
-                    <Clock className="h-3.5 w-3.5 text-amber-600" />
-                  </div>
-                  <h2 className="font-display text-base font-bold text-foreground">待审核订单 ({pendingOrders.length})</h2>
-                </div>
-                <div className="space-y-3 stagger-children">
-                  {pendingOrders.map(order => (
-                    <div key={order.id} className="overflow-hidden rounded-lg bg-white">
-                      <div className="flex items-start justify-between gap-4 px-5 py-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-1.5 flex items-center gap-2">
-                            <FileText className="h-4 w-4 text-muted-foreground/60" />
-                            <span className="text-sm font-bold text-foreground">{order.id}</span>
-                            <span className="badge bg-amber-100 text-amber-700">待审核</span>
-                          </div>
-                          <div className="mb-2.5 grid gap-1.5 sm:grid-cols-2">
-                            <div><span className="text-xs text-muted-foreground">客户: </span><span className="text-sm font-medium text-foreground">{order.customerName}</span></div>
-                            <div><span className="text-xs text-muted-foreground">电话: </span><span className="text-sm text-muted-foreground">{order.customerPhone}</span></div>
-                            <div><span className="text-xs text-muted-foreground">时间: </span><span className="text-sm text-muted-foreground">{new Date(order.createdAt).toLocaleString('zh-CN')}</span></div>
-                            <div><span className="text-xs text-muted-foreground">地址: </span><span className="text-sm text-muted-foreground truncate">{order.customerAddress}</span></div>
-                          </div>
-                          {(order.serviceName || order.distributorName || order.factoryName) && (
-                            <div className="mb-2.5 flex flex-wrap items-center gap-1 text-[10px] text-muted-foreground/60">
-                              <span className="text-muted-foreground/60">流转:</span>
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">老人:{order.customerName}</span>
-                              {order.serviceName && <><span>&rarr;</span><span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{order.serviceName}</span></>}
-                              {order.distributorName && <><span>&rarr;</span><span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-600">{order.distributorName}</span></>}
-                              {order.factoryName && <><span>&rarr;</span><span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-600">{order.factoryName}</span></>}
-                            </div>
-                          )}
-                          <div className="flex flex-wrap gap-1 mb-2.5">
-                            {order.items.map((item, idx) => (
-                              <span key={idx} className="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">
-                                {item.mealName} <span className="font-medium" style={{ color: 'hsl(15 55% 40%)' }}>x{item.quantity}</span>
-                              </span>
-                            ))}
-                          </div>
-                          <div className="text-lg font-bold" style={{ color: 'hsl(15 55% 40%)' }}>${order.totalAmount}</div>
-                        </div>
-                      </div>
-                      <div className="flex gap-3 px-5 py-3">
-                        <button
-                          onClick={() => handleApprove(order.id)}
-                          className="flex flex-1 items-center justify-center gap-2 rounded bg-emerald-500 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-600"
-                        >
-                          <CheckCircle className="h-4 w-4" /> 审核通过
-                        </button>
-                        <button
-                          onClick={() => handleReject(order.id)}
-                          className="flex flex-1 items-center justify-center gap-2 rounded ring-1 ring-red-200 bg-white py-2 text-sm font-semibold text-red-500 transition-colors hover:bg-red-50"
-                        >
-                          <XCircle className="h-4 w-4" /> 拒绝
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {approvedOrders.length > 0 && <OrderStatusSection title="已审核 (待分销汇总)" orders={approvedOrders} icon={CheckCircle} iconBg="bg-blue-100" iconColor="text-blue-600" badgeLabel="已通过" badgeClass="bg-blue-100 text-blue-700" />}
-            {processingOrders.length > 0 && <OrderStatusSection title="生产中" orders={processingOrders} icon={Clock} iconBg="bg-primary/12" iconColor="text-primary" badgeLabel="生产中" badgeClass="bg-primary/12 text-primary" />}
-            {completedOrders.length > 0 && <OrderStatusSection title="已完成 (待配送)" orders={completedOrders} icon={Truck} iconBg="bg-emerald-100" iconColor="text-emerald-600" badgeLabel="已完成" badgeClass="bg-emerald-100 text-emerald-700" />}
-            {deliveredOrders.length > 0 && <OrderStatusSection title="已送达" orders={deliveredOrders} icon={CheckCircle} iconBg="bg-muted" iconColor="text-muted-foreground" badgeLabel="已送达" badgeClass="bg-muted text-muted-foreground" />}
-            {rejectedOrders.length > 0 && <OrderStatusSection title="已拒绝" orders={rejectedOrders} icon={XCircle} iconBg="bg-red-100" iconColor="text-red-600" badgeLabel="已拒绝" badgeClass="bg-red-100 text-red-700" />}
-
-            {myOrders.length === 0 && (
-              <div className="flex flex-col items-center justify-center rounded-lg bg-white py-20">
-                <FileText className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                <p className="text-sm font-medium text-muted-foreground">暂无订单需要审核</p>
-                <p className="mt-1 text-xs text-muted-foreground/60">老人提交的订单将在此处显示</p>
-              </div>
-            )}
-          </div>
-        )}
+        {activeTab === 'customers' && <CustomersTab customers={myCustomers} />}
+        {activeTab === 'limits' && <LimitsTab customers={myCustomers} />}
+        {activeTab === 'orders' && <OrdersTab orders={myOrders} />}
       </main>
     </div>
   )
 }
 
-function OrderStatusSection({ title, orders, icon: Icon, iconBg, iconColor, badgeLabel, badgeClass }: {
-  title: string
-  orders: Order[]
-  icon: React.ElementType
-  iconBg: string
-  iconColor: string
-  badgeLabel: string
-  badgeClass: string
+function DashboardTab({ myCustomers, todayOrders, monthlySpending, coveredCount, myOrders }: {
+  myCustomers: CustomerAccount[]
+  todayOrders: Order[]
+  monthlySpending: number
+  coveredCount: number
+  myOrders: Order[]
 }) {
+  const statColors = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b']
+
   return (
-    <section>
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className={`flex h-7 w-7 items-center justify-center rounded-md ${iconBg}`}>
-          <Icon className={`h-3.5 w-3.5 ${iconColor}`} />
-        </div>
-        <h2 className="font-display text-base font-bold text-foreground">{title} ({orders.length})</h2>
-      </div>
-      <div className="space-y-1.5">
-        {orders.map(order => (
-          <div key={order.id} className="flex items-center justify-between rounded bg-white px-4 py-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <Icon className={`h-4.5 w-4.5 flex-shrink-0 ${iconColor}`} />
-              <div className="min-w-0">
-                <span className="text-sm font-semibold text-foreground">{order.id}</span>
-                <span className="ml-2 text-xs text-muted-foreground truncate">{order.customerName} · {order.customerPhone}</span>
+    <div className="animate-fade-in space-y-6">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 stagger-children">
+        {[
+          { label: '管理老人', value: myCustomers.length, icon: Users, colorIdx: 0 },
+          { label: '今日订单', value: todayOrders.length, icon: ShoppingBag, colorIdx: 1 },
+          { label: '本月消费', value: `¥${monthlySpending.toFixed(0)}`, icon: DollarSign, colorIdx: 2 },
+          { label: '限额覆盖率', value: myCustomers.length > 0 ? `${Math.round((coveredCount / myCustomers.length) * 100)}%` : '0%', icon: DollarSign, colorIdx: 3 },
+        ].map(s => (
+          <div key={s.label} className="rounded-xl border border-slate-100 bg-white px-5 py-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[28px] font-bold tabular-nums leading-none text-foreground">{s.value}</p>
+                <p className="mt-1.5 text-xs font-medium text-muted-foreground">{s.label}</p>
               </div>
-            </div>
-            <div className="flex items-center gap-3 flex-shrink-0">
-              {(order.serviceName || order.distributorName || order.factoryName) && (
-                <div className="hidden sm:flex items-center gap-1 text-[10px] text-muted-foreground/60">
-                  {order.serviceName && <span className="rounded bg-primary/10 px-1.5 py-0.5 text-primary">{order.serviceName}</span>}
-                  {order.distributorName && <><span>&rarr;</span><span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-600">{order.distributorName}</span></>}
-                  {order.factoryName && <><span>&rarr;</span><span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-600">{order.factoryName}</span></>}
-                </div>
-              )}
-              <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${badgeClass}`}>{badgeLabel}</span>
-              <span className="text-sm font-bold text-foreground w-16 text-right">${order.totalAmount}</span>
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg" style={{ background: statColors[s.colorIdx] }}>
+                <s.icon className="h-5 w-5 text-white" />
+              </div>
             </div>
           </div>
         ))}
       </div>
-    </section>
+
+      <div className="rounded-xl border border-slate-100 bg-white">
+        <div className="px-5 py-3.5">
+          <h3 className="font-bold text-sm font-bold text-foreground">最近订单 ({Math.min(10, myOrders.length)})</h3>
+        </div>
+        <div>
+          {myOrders.slice().reverse().slice(0, 10).map(order => (
+            <div key={order.id} className="flex items-center justify-between px-5 py-3 transition-colors hover:bg-slate-50/60">
+              <div>
+                <span className="text-sm font-semibold text-foreground">{order.id}</span>
+                <span className="ml-2 text-xs text-muted-foreground">{order.customerName} &middot; {order.customerPhone}</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <StatusBadge status={order.status} />
+                <span className="text-sm font-bold text-violet-600">¥{order.totalAmount}</span>
+              </div>
+            </div>
+          ))}
+          {myOrders.length === 0 && <p className="px-5 py-10 text-center text-sm text-muted-foreground">暂无订单</p>}
+        </div>
+      </div>
+    </div>
   )
+}
+
+function CustomersTab({ customers }: { customers: CustomerAccount[] }) {
+  return (
+    <div className="animate-fade-in">
+      <div className="mb-5 flex items-center gap-2.5">
+        <h2 className="font-bold text-lg font-bold text-foreground">管理老人</h2>
+        <span className="rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-semibold text-violet-700">{customers.length}</span>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-slate-50/80 border-slate-100 text-left">
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">姓名</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">电话</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">地址</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">备注</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {customers.length === 0 ? (
+                <tr><td colSpan={4} className="px-5 py-12 text-center text-sm text-muted-foreground">暂无关联老人</td></tr>
+              ) : (
+                customers.map(c => (
+                  <tr key={c.id} className="transition-colors hover:bg-slate-50/60">
+                    <td className="px-5 py-3 font-semibold text-foreground">{c.name}</td>
+                    <td className="px-5 py-3 text-foreground">{c.phone}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{c.address || '-'}</td>
+                    <td className="px-5 py-3 text-muted-foreground">{c.notes || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function LimitsTab({ customers }: { customers: CustomerAccount[] }) {
+  const [limits, setLimits] = useState<SpendingLimit[]>(() => storage.getSpendingLimits())
+  const [editingPhone, setEditingPhone] = useState<string | null>(null)
+  const [draftDaily, setDraftDaily] = useState(0)
+  const [draftWeekly, setDraftWeekly] = useState(0)
+  const [draftMonthly, setDraftMonthly] = useState(0)
+  const [saved, setSaved] = useState<string | null>(null)
+
+  const getLimit = (phone: string) => limits.find(l => l.customerPhone === phone)
+
+  const startEdit = (customer: CustomerAccount) => {
+    const l = getLimit(customer.phone)
+    setEditingPhone(customer.phone)
+    setDraftDaily(l?.dailyLimit ?? 0)
+    setDraftWeekly(l?.weeklyLimit ?? 0)
+    setDraftMonthly(l?.monthlyLimit ?? 0)
+  }
+
+  const handleSave = (customer: CustomerAccount) => {
+    storage.setSpendingLimit(customer.id, customer.phone, draftDaily, draftWeekly, draftMonthly)
+    setLimits(storage.getSpendingLimits())
+    setEditingPhone(null)
+    setSaved(customer.phone)
+    setTimeout(() => setSaved(null), 2000)
+  }
+
+  const handleClear = async (phone: string) => {
+    if (!await confirmDialog('清除限额', '确定清除此老人的费用限额？清除后该老人将不再受消费限制。')) return
+    const updated = limits.filter(l => l.customerPhone !== phone)
+    storage.saveSpendingLimits(updated)
+    setLimits(updated)
+  }
+
+  return (
+    <div className="animate-fade-in">
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h2 className="font-bold text-lg font-bold text-foreground">费用限额管理</h2>
+          <p className="mt-1 text-sm text-muted-foreground">为本机构老人设置每日、每周、每月的消费上限，超出限额的订单将被拦截</p>
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-100 bg-white">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-slate-50/80 border-slate-100 text-left">
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">老人</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每日限额</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每周限额</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">每月限额</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">今日消费</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">本周消费</th>
+                <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">本月消费</th>
+                <th className="px-5 py-3 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">操作</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {customers.length === 0 ? (
+                <tr><td colSpan={8} className="px-5 py-12 text-center text-sm text-muted-foreground">暂无关联老人</td></tr>
+              ) : (
+                customers.map(c => {
+                  const l = getLimit(c.phone)
+                  const isEditing = editingPhone === c.phone
+                  const dailySpent = storage.getSpentInPeriod(c.phone, 'daily')
+                  const weeklySpent = storage.getSpentInPeriod(c.phone, 'weekly')
+                  const monthlySpent = storage.getSpentInPeriod(c.phone, 'monthly')
+                  const hasLimit = l && (l.dailyLimit > 0 || l.weeklyLimit > 0 || l.monthlyLimit > 0)
+
+                  return (
+                    <tr key={c.id} className="transition-colors hover:bg-slate-50/60">
+                      <td className="px-5 py-3">
+                        <div>
+                          <p className="font-semibold text-foreground">{c.name}</p>
+                          <p className="text-xs text-muted-foreground">{c.phone}</p>
+                        </div>
+                      </td>
+                      {isEditing ? (
+                        <>
+                          <td className="px-5 py-3">
+                            <input type="number" min={0} value={draftDaily} onChange={e => setDraftDaily(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
+                          </td>
+                          <td className="px-5 py-3">
+                            <input type="number" min={0} value={draftWeekly} onChange={e => setDraftWeekly(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
+                          </td>
+                          <td className="px-5 py-3">
+                            <input type="number" min={0} value={draftMonthly} onChange={e => setDraftMonthly(Math.max(0, parseInt(e.target.value) || 0))}
+                              className="w-24 rounded border border-slate-200 px-2 py-1 text-sm" placeholder="0=不限" />
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-5 py-3 text-foreground">{l?.dailyLimit ? `¥${l.dailyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
+                          <td className="px-5 py-3 text-foreground">{l?.weeklyLimit ? `¥${l.weeklyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
+                          <td className="px-5 py-3 text-foreground">{l?.monthlyLimit ? `¥${l.monthlyLimit}` : <span className="text-muted-foreground/50">不限</span>}</td>
+                        </>
+                      )}
+                      <td className="px-5 py-3">
+                        <SpentCell spent={dailySpent} limit={l?.dailyLimit ?? 0} />
+                      </td>
+                      <td className="px-5 py-3">
+                        <SpentCell spent={weeklySpent} limit={l?.weeklyLimit ?? 0} />
+                      </td>
+                      <td className="px-5 py-3">
+                        <SpentCell spent={monthlySpent} limit={l?.monthlyLimit ?? 0} />
+                      </td>
+                      <td className="px-5 py-3 text-right">
+                        {isEditing ? (
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button onClick={() => handleSave(c)} className="rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-violet-700">保存</button>
+                            <button onClick={() => setEditingPhone(null)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-slate-50">取消</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end gap-1.5">
+                            {saved === c.phone && <span className="text-xs font-medium text-emerald-600">已保存</span>}
+                            <button onClick={() => startEdit(c)} className="rounded p-1.5 text-muted-foreground/60 transition-colors hover:bg-violet-50 hover:text-violet-600">
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            {hasLimit && (
+                              <button onClick={() => handleClear(c.phone)} className="rounded p-1.5 text-muted-foreground/60 transition-colors hover:bg-red-50 hover:text-red-600">
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-xl bg-violet-50 border border-violet-200 px-5 py-4">
+        <p className="text-sm font-medium text-violet-800">限额说明</p>
+        <p className="mt-1 text-xs text-violet-700">
+          设置为 0 表示该周期不限制消费。当老人提交订单金额超过任一生效周期的剩余额度时，系统将阻止订单提交并提示具体超限信息。
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function SpentCell({ spent, limit }: { spent: number; limit: number }) {
+  const isOver = limit > 0 && spent >= limit
+  const pct = limit > 0 ? Math.min(100, Math.round((spent / limit) * 100)) : 0
+  return (
+    <div>
+      <span className={`text-sm font-semibold tabular-nums ${isOver ? 'text-red-600' : 'text-foreground'}`}>
+        ¥{spent.toFixed(0)}
+      </span>
+      {limit > 0 && (
+        <div className="mt-1 flex items-center gap-1.5">
+          <div className="h-1 w-12 rounded-full bg-muted overflow-hidden">
+            <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, background: isOver ? '#ef4444' : pct > 70 ? '#f59e0b' : '#10b981' }} />
+          </div>
+          <span className="text-[10px] text-muted-foreground">{pct}%</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function OrdersTab({ orders }: { orders: Order[] }) {
+  const [filter, setFilter] = useState<string>('all')
+  const filtered = filter === 'all' ? orders : orders.filter(o => o.status === filter)
+
+  return (
+    <div className="animate-fade-in">
+      <div className="mb-5 flex items-center justify-between">
+        <h2 className="font-bold text-lg font-bold text-foreground">订单记录</h2>
+        <div className="flex gap-0.5 rounded-lg bg-slate-100/80 p-1">
+          {['all', 'pending', 'processing', 'delivered', 'cancelled', 'rejected'].map(s => (
+            <button
+              key={s}
+              onClick={() => setFilter(s)}
+              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                filter === s ? 'bg-white text-violet-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {s === 'all' ? '全部' : statusLabel(s)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-xl bg-white py-20">
+          <ShoppingBag className="mb-3 h-9 w-9 text-muted-foreground/30" />
+          <p className="text-sm font-medium text-muted-foreground">暂无订单</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.slice().reverse().map(order => (
+            <div key={order.id} className="rounded-xl border border-slate-100 bg-white px-5 py-3.5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-semibold text-foreground">{order.id}</span>
+                  <span className="ml-2 text-xs text-muted-foreground">{order.customerName} &middot; {order.customerPhone}</span>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {order.items.map(i => `${i.mealName} x${i.quantity}`).join('、')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <StatusBadge status={order.status} />
+                  <span className="text-sm font-bold text-violet-600">¥{order.totalAmount}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const config: Record<string, { bg: string; text: string; border: string; label: string }> = {
+    pending: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border border-amber-200', label: '待处理' },
+    approved: { bg: 'bg-cyan-50', text: 'text-cyan-700', border: 'border border-cyan-200', label: '已提交' },
+    processing: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border border-violet-200', label: '处理中' },
+    completed: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border border-emerald-200', label: '已完成' },
+    delivered: { bg: 'bg-slate-50', text: 'text-slate-700', border: 'border border-slate-200', label: '已送达' },
+    rejected: { bg: 'bg-red-50', text: 'text-red-700', border: 'border border-red-200', label: '已拒绝' },
+    cancelled: { bg: 'bg-red-50', text: 'text-red-700', border: 'border border-red-200', label: '已取消' },
+  }
+  const c = config[status] || config.pending
+  return <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${c.bg} ${c.text} ${c.border}`}>{c.label}</span>
+}
+
+function statusLabel(s: string): string {
+  const map: Record<string, string> = {
+    pending: '待处理', approved: '已提交', processing: '处理中', completed: '已完成', delivered: '已送达', rejected: '已拒绝', cancelled: '已取消',
+  }
+  return map[s] || s
 }
